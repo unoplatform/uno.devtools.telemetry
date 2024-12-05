@@ -19,11 +19,11 @@ using RuntimeInformation = System.Runtime.InteropServices.RuntimeInformation;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Reflection;
-using Uno.UI.SourceGenerators.Helpers;
+using Uno.DevTools.Telemetry.Helpers;
 using System.Security.Cryptography;
 using System.Net.NetworkInformation;
 
-namespace Uno.UI.SourceGenerators.Telemetry
+namespace Uno.DevTools.Telemetry
 {
     internal class TelemetryCommonProperties
     {

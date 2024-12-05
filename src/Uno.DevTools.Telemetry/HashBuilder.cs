@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.CodeAnalysis;
 
-namespace Uno.UI.SourceGenerators.Helpers
+namespace Uno.DevTools.Telemetry.Helpers
 {
 	internal class HashBuilder
 	{

@@ -9,7 +9,7 @@
 
 using System.Collections.Generic;
 
-namespace Uno.UI.SourceGenerators.Telemetry.PersistenceChannel
+namespace Uno.DevTools.Telemetry.PersistenceChannel
 {
 	/// <summary>
 	///     A light fixed size queue. If Enqueue is called and queue's limit has reached the last item will be removed.

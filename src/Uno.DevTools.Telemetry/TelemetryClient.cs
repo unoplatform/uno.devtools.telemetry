@@ -17,7 +17,7 @@ using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.DotNet.PlatformAbstractions;
 
-namespace Uno.UI.SourceGenerators.Telemetry
+namespace Uno.DevTools.Telemetry
 {
 	public class Telemetry
 	{

@@ -1,0 +1,75 @@
+name: CI
+
+on: 
+  push:
+    branches:
+      - main
+      - release/**
+
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - release/**
+
+jobs:
+  build:
+    name: Build
+    runs-on: windows-2022
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - uses: dotnet/nbgv@f088059084cb5d872e9d1a994433ca6440c2bf72 # v0.4.2
+      with:
+        toolVersion: 3.6.139
+        setAllVars: true
+
+    - name: Build
+      run: |
+        cd src
+        dotnet build -c Release -p:PackageVersion=$env:NBGV_SemVer2 -p:Version=$env:NBGV_SemVer2 "-p:InformationalVersion=$env:NBGV_SemVer2+$env:NBGV_BuildingRef" "/p:PackageOutputPath=$env:GITHUB_WORKSPACE\artifacts" 
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: NuGet
+        path: .\artifacts
+
+  publish:
+    name: Publish
+    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) }}
+    runs-on: windows-latest
+    needs:
+      - build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: NuGet
+          path: artifacts
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '3.1.x'
+
+      - name: Setup SignClient
+        run: |
+          dotnet tool install --tool-path build SignClient
+
+      - name: SignClient
+        run: |
+          if ("${{ secrets.SIGN_CLIENT_USER }}" -ne "")
+          {
+            build\SignClient sign -i artifacts\*.nupkg -c build\SignClient.json -r "${{ secrets.SIGN_CLIENT_USER }}" -s "${{ secrets.SIGN_CLIENT_SECRET }}" -n "Uno.Devtools.Telemetry" -d "Uno.Devtools.Telemetry" -u "https://github.com/unoplatform/uno.devtools.telemetry"
+          }
+
+      - name: NuGet Push
+        run: |
+          dotnet nuget push artifacts\*.nupkg -s https://api.nuget.org/v3/index.json -k ${{ secrets.NUGET_ORG_API_KEY }}

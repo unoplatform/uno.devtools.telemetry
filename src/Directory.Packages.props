@@ -1,0 +1,9 @@
+<Project>
+	<ItemGroup>
+		<PackageVersion Include="Microsoft.Sbom.Targets" Version="3.0.0" />
+		<PackageVersion Include="Microsoft.ApplicationInsights" Version="2.20.0" />
+		<PackageVersion Include="Microsoft.DotNet.PlatformAbstractions" Version="3.1.6" />
+		<PackageVersion Include="PolySharp" Version="1.15.0" />
+		<PackageVersion Include="Microsoft.SourceLink.GitHub" Version="1.1.1"/>
+	</ItemGroup>
+</Project>

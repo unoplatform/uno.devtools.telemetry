@@ -11,7 +11,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 
-namespace Uno.UI.SourceGenerators.Telemetry.PersistenceChannel
+namespace Uno.DevTools.Telemetry.PersistenceChannel
 {
 	internal abstract class SnapshottingCollection<TItem, TCollection> : ICollection<TItem>
 		where TCollection : notnull, ICollection<TItem>

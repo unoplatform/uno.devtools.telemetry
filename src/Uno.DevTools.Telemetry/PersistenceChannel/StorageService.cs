@@ -16,7 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.ApplicationInsights.Channel;
 
-namespace Uno.UI.SourceGenerators.Telemetry.PersistenceChannel
+namespace Uno.DevTools.Telemetry.PersistenceChannel
 {
 	internal sealed class StorageService : BaseStorageService
 	{

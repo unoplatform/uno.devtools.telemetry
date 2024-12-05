@@ -12,7 +12,7 @@ using System.Threading;
 using Microsoft.ApplicationInsights.Channel;
 using IChannelTelemetry = Microsoft.ApplicationInsights.Channel.ITelemetry;
 
-namespace Uno.UI.SourceGenerators.Telemetry.PersistenceChannel
+namespace Uno.DevTools.Telemetry.PersistenceChannel
 {
 	/// <summary>
 	///     Represents a communication channel for sending telemetry to Application Insights via HTTPS.

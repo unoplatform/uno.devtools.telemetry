@@ -9,7 +9,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-namespace Uno.UI.SourceGenerators.Telemetry.PersistenceChannel
+namespace Uno.DevTools.Telemetry.PersistenceChannel
 {
 	internal class SnapshottingDictionary<TKey, TValue> :
 		SnapshottingCollection<KeyValuePair<TKey, TValue>, IDictionary<TKey, TValue>>, IDictionary<TKey, TValue> where TKey:notnull

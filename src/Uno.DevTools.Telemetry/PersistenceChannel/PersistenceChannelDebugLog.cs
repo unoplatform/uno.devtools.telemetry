@@ -11,7 +11,7 @@ using System;
 using System.Globalization;
 using System.IO;
 
-namespace Uno.UI.SourceGenerators.Telemetry.PersistenceChannel
+namespace Uno.DevTools.Telemetry.PersistenceChannel
 {
 	internal static class PersistenceChannelDebugLog
 	{
@@ -19,7 +19,7 @@ namespace Uno.UI.SourceGenerators.Telemetry.PersistenceChannel
 
 		private static bool IsEnabledByEnvironment()
 		{
-			if (bool.TryParse(Environment.GetEnvironmentVariable("UNO_SOURCEGEN_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT"), out var enabled))
+			if (bool.TryParse(Environment.GetEnvironmentVariable("UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT"), out var enabled))
 			{
 				return enabled;
 			}

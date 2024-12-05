@@ -12,6 +12,7 @@
 		<Copyright>Copyright (c) Uno Platform 2015-$([System.DateTime]::Now.ToString(`yyyy`))</Copyright>
 		<Description>A development-time dependency for telemetry</Description>
 		<DevelopmentDependency>true</DevelopmentDependency>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	</PropertyGroup>
 
 	<ItemGroup>

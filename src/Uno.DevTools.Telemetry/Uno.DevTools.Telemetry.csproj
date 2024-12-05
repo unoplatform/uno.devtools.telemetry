@@ -17,8 +17,12 @@
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<IncludeSymbols>true</IncludeSymbols>
-		<DebugType>embedded</DebugType>
 	</PropertyGroup>
+	
+	<PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+		<ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+	</PropertyGroup>
+	
 	<ItemGroup>
 		<!-- This assumes GitHub source control but other repo options are available -->
 		<PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All"/>

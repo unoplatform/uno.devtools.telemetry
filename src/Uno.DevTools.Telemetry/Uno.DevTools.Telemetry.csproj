@@ -16,6 +16,8 @@
 		<Deterministic>true</Deterministic>
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<IncludeSymbols>true</IncludeSymbols>
+		<DebugType>embedded</DebugType>
 	</PropertyGroup>
 	<ItemGroup>
 		<!-- This assumes GitHub source control but other repo options are available -->

@@ -1,0 +1,33 @@
+<Project>
+	<PropertyGroup>
+		<Authors Condition="'$(Authors)'=='' or '$(Authors)'=='$(PackageId)' or '$(Authors)'=='$(AssemblyName)'">Uno Platform</Authors>
+		<Copyright Condition="'$(Copyright)'==''">Copyright (C) 2015-$([System.DateTime]::Now.ToString(`yyyy`)) Uno Platform inc. - all rights reserved</Copyright>
+		<Product Condition="'$(Product)'==''">$(AssemblyName) ($(TargetFramework))</Product>
+		<DefaultLanguage Condition="'$(DefaultLanguage)'==''">en-US</DefaultLanguage>
+
+		<PackageIcon>uno.png</PackageIcon>
+		<_UnoIconUrl>https://uno-assets.platform.uno/logos/uno.png</_UnoIconUrl>
+		<_UnoIconPath>$(MSBuildThisFileDirectory)\.icons</_UnoIconPath>
+		<_UnoIconFilePath>$(_UnoIconPath)\$(PackageIcon)</_UnoIconFilePath>
+
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseFile>LICENSE.md</PackageLicenseFile>
+	</PropertyGroup>
+
+	<Target Name="_UnoDownloadPackageIcon"
+			BeforeTargets="Restore;Build"
+			Condition=" !exists($(_UnoIconFilePath)) ">
+		<DownloadFile SourceUrl="$(_UnoIconUrl)" DestinationFileName="$(PackageIcon)" DestinationFolder="$(_UnoIconPath)" Retries="3">
+			<Output TaskParameter="DownloadedFile" PropertyName="UnoPackageDownloadedIcon" />
+		</DownloadFile>
+	</Target>
+
+	<Target Name="_UnoSetMetadata" AfterTargets="Build">
+		<ItemGroup>
+			<None Include="$(_UnoIconFilePath)" Pack="true" PackagePath="\" Visible="false" />
+			<None Include="../../LICENSE.md" Pack="true" PackagePath="\" Visible="false" />
+			<None Include="../../README.md" Pack="true" PackagePath="\" Visible="false" />
+		</ItemGroup>
+	</Target>
+
+</Project>

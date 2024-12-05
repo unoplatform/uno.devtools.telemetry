@@ -1,0 +1,9 @@
+<Project>
+	<PropertyGroup>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+		<GenerateSBOM>true</GenerateSBOM>
+		<NoWarn>$(NoWarn);NU1507</NoWarn>
+	</PropertyGroup>
+</Project>

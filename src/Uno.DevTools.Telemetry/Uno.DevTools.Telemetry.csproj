@@ -13,8 +13,14 @@
 		<Description>A development-time dependency for telemetry</Description>
 		<DevelopmentDependency>true</DevelopmentDependency>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<Deterministic>true</Deterministic>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 	</PropertyGroup>
-
+	<ItemGroup>
+		<!-- This assumes GitHub source control but other repo options are available -->
+		<PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All"/>
+	</ItemGroup>
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Sbom.Targets">
 			<PrivateAssets>all</PrivateAssets>

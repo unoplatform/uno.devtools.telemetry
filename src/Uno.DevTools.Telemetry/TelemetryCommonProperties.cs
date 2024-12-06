@@ -46,21 +46,67 @@ namespace Uno.DevTools.Telemetry
         public const string TelemetryProfile = "Telemetry Profile";
         public const string CurrentPathHash = "Current Path Hash";
         public const string KernelVersion = "Kernel Version";
+        public const string IsRunningCI = "Kernel Version";
 
         private const string TelemetryProfileEnvironmentVariable = "DOTNET_CLI_TELEMETRY_PROFILE";
 
-        public Dictionary<string, string> GetTelemetryCommonProperties() => new Dictionary<string, string>
+        public Dictionary<string, string> GetTelemetryCommonProperties()
+        {
+            var properties = new Dictionary<string, string>()
             {
-                {OSVersion, RuntimeEnvironment.OperatingSystemVersion},
-                {OSPlatform, RuntimeEnvironment.OperatingSystemPlatform.ToString()},
-                {OutputRedirected, Console.IsOutputRedirected.ToString()},
-                {RuntimeId, RuntimeEnvironment.GetRuntimeIdentifier()},
-                {ProductVersion, GetProductVersion()},
-                {TelemetryProfile, Environment.GetEnvironmentVariable(TelemetryProfileEnvironmentVariable)??""},
-                {MachineId, GetMachineId()},
-                {CurrentPathHash, HashBuilder.Build(_getCurrentDirectory())},
-                {KernelVersion, GetKernelVersion()},
+                { OSVersion, RuntimeEnvironment.OperatingSystemVersion },
+                { OSPlatform, RuntimeEnvironment.OperatingSystemPlatform.ToString() },
+                { OutputRedirected, Console.IsOutputRedirected.ToString() },
+                { RuntimeId, RuntimeEnvironment.GetRuntimeIdentifier() },
+                { ProductVersion, GetProductVersion() },
+                { TelemetryProfile, Environment.GetEnvironmentVariable(TelemetryProfileEnvironmentVariable) ?? "" },
+                { MachineId, GetMachineId() },
+                { CurrentPathHash, HashBuilder.Build(_getCurrentDirectory()) },
+                { KernelVersion, GetKernelVersion() },
             };
+
+            var runningCI = GetIsRunningCI();
+            properties.Add(IsRunningCI, runningCI.isRunning.ToString());
+
+            if(runningCI.isRunning)
+            {
+                properties.Add("CIName", runningCI.name!);
+            }
+
+            return properties;
+        }
+
+        public (bool isRunning, string? name) GetIsRunningCI()
+        {
+            (string name, string variable)[] properties = [
+                ("azuredevops", "TF_BUILD"), // https://docs.microsoft.com/en-us/azure/devops/pipelines/build/variables?tabs=yaml&view=azure-devops#system-variables
+                ("travis", "TRAVIS"), // https://docs.travis-ci.com/user/environment-variables/#default-environment-variables
+                ("jenkins", "JENKINS_URL"), // https://wiki.jenkins.io/display/JENKINS/Building+a+software+project#Buildingasoftwareproject-belowJenkinsSetEnvironmentVariables
+                ("githubactions", "GITHUB_REPOSITORY"), // https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables#default-environment-variables
+                ("appveyor", "APPVEYOR"), // https://www.appveyor.com/docs/environment-variables/
+                ("bitbucket", "BITBUCKET_WORKSPACE"), // https://support.atlassian.com/bitbucket-cloud/docs/variables-and-secrets/
+                ("buildkite", "BUILDKITE"), // https://buildkite.com/docs/pipelines/configure/environment-variables
+                ("codebuild", "CODEBUILD_WEBHOOK_HEAD_REF"), // https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
+                ("drone", "DRONE"), // https://docs.drone.io/pipeline/environment/reference/
+                ("gitlab", "GITLAB_CI"), // https://docs.gitlab.com/ee/ci/variables
+                ("myget", "BuildRunner"), // https://docs.myget.org/docs/reference/build-services
+                ("jetbrains-space", "JB_SPACE_PROJECT_KEY"), // https://www.jetbrains.com/help/space/automation-parameters.html#view-job-and-step-parameters
+                ("teamcity", "TEAMCITY_VERSION"), // https://www.jetbrains.com/help/teamcity/predefined-build-parameters.html
+                ("travis", "TRAVIS"), // https://docs.travis-ci.com/user/environment-variables/
+            ];
+
+            var environment = properties
+                .FirstOrDefault(property => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(property.variable)));
+
+            if (environment is { name.Length: > 0})
+            {
+                return (true, environment.name);
+            }
+            else
+            {
+                return (false, null);
+            }
+        }
 
         private string GetMachineId()
         {

@@ -31,6 +31,7 @@ namespace Uno.DevTools.Telemetry
         private string? _settingsStorageDirectoryPath;
         private PersistenceChannel.PersistenceChannel? _persistenceChannel;
         private string _instrumentationKey;
+        private static string _eventNamePrefix;
         private readonly Func<string>? _currentDirectoryProvider;
         private const string TelemetryOptout = "UNO_PLATFORM_TELEMETRY_OPTOUT";
 
@@ -46,6 +47,7 @@ namespace Uno.DevTools.Telemetry
         /// <param name="sessionId">Defines the session ID for this instance</param>
         public Telemetry(
             string instrumentationKey,
+            string eventNamePrefix,
             string? sessionId = null,
             bool blockThreadInitialization = false,
             Func<bool?>? enabledProvider = null,
@@ -53,6 +55,7 @@ namespace Uno.DevTools.Telemetry
         {
             _instrumentationKey = instrumentationKey;
             _currentDirectoryProvider = currentDirectoryProvider;
+            _eventNamePrefix = eventNamePrefix;
 
             if (bool.TryParse(Environment.GetEnvironmentVariable(TelemetryOptout), out var telemetryOptOut))
             {
@@ -194,7 +197,7 @@ namespace Uno.DevTools.Telemetry
 
         private static string PrependProducerNamespace(string eventName)
         {
-            return "uno/generation/" + eventName;
+            return _eventNamePrefix + "/" + eventName;
         }
 
         private Dictionary<string, double> GetEventMeasures(IDictionary<string, double>? measurements)

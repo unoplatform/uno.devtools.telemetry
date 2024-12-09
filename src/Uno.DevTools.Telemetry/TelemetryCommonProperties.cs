@@ -46,7 +46,7 @@ namespace Uno.DevTools.Telemetry
         public const string TelemetryProfile = "Telemetry Profile";
         public const string CurrentPathHash = "Current Path Hash";
         public const string KernelVersion = "Kernel Version";
-        public const string IsRunningCI = "Kernel Version";
+        public const string IsRunningCI = "IsRunningCI";
 
         private const string TelemetryProfileEnvironmentVariable = "DOTNET_CLI_TELEMETRY_PROFILE";
 

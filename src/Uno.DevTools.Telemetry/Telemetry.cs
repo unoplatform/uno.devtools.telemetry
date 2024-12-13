@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.Extensibility;
@@ -21,7 +22,7 @@ namespace Uno.DevTools.Telemetry
 {
     public class Telemetry
     {
-        internal static string? CurrentSessionId;
+        private string? _currentSessionId;
         private TelemetryClient? _client;
         private Dictionary<string, string>? _commonProperties;
         private Dictionary<string, double>? _commonMeasurements;
@@ -32,6 +33,7 @@ namespace Uno.DevTools.Telemetry
         private PersistenceChannel.PersistenceChannel? _persistenceChannel;
         private string _instrumentationKey;
         private string _eventNamePrefix;
+        private readonly Assembly _versionAssembly;
         private readonly Func<string>? _currentDirectoryProvider;
         private const string TelemetryOptout = "UNO_PLATFORM_TELEMETRY_OPTOUT";
 
@@ -45,9 +47,11 @@ namespace Uno.DevTools.Telemetry
         /// <param name="currentDirectoryProvider">A delegate that can provide the value to be hashed in the "Current Path Hash" custom dimension </param>
         /// <param name="blockThreadInitialization">Block the execution of the constructor until the telemetry is initialized</param>
         /// <param name="sessionId">Defines the session ID for this instance</param>
+        /// <param name="versionAssembly">The assembly to use to get the version to report in telemetry</param>
         public Telemetry(
             string instrumentationKey,
             string eventNamePrefix,
+            Assembly versionAssembly,
             string? sessionId = null,
             bool blockThreadInitialization = false,
             Func<bool?>? enabledProvider = null,
@@ -56,6 +60,7 @@ namespace Uno.DevTools.Telemetry
             _instrumentationKey = instrumentationKey;
             _currentDirectoryProvider = currentDirectoryProvider;
             _eventNamePrefix = eventNamePrefix;
+            _versionAssembly = versionAssembly;
 
             if (bool.TryParse(Environment.GetEnvironmentVariable(TelemetryOptout), out var telemetryOptOut))
             {
@@ -72,7 +77,7 @@ namespace Uno.DevTools.Telemetry
             }
 
             // Store the session ID in a static field so that it can be reused
-            CurrentSessionId = sessionId ?? Guid.NewGuid().ToString();
+            _currentSessionId = sessionId ?? Guid.NewGuid().ToString();
             if (blockThreadInitialization)
             {
                 InitializeTelemetry();
@@ -154,14 +159,14 @@ namespace Uno.DevTools.Telemetry
 
                 _persistenceChannel.SendingInterval = TimeSpan.FromMilliseconds(1);
 
-                _commonProperties = new TelemetryCommonProperties(_settingsStorageDirectoryPath, _currentDirectoryProvider).GetTelemetryCommonProperties();
+                _commonProperties = new TelemetryCommonProperties(_settingsStorageDirectoryPath, _versionAssembly, _currentDirectoryProvider).GetTelemetryCommonProperties();
                 _commonMeasurements = new Dictionary<string, double>();
 
                 _telemetryConfig = new TelemetryConfiguration { InstrumentationKey = _instrumentationKey };
                 _client = new TelemetryClient(_telemetryConfig);
                 _client.InstrumentationKey = _instrumentationKey;
                 _client.Context.User.Id = _commonProperties[TelemetryCommonProperties.MachineId];
-                _client.Context.Session.Id = CurrentSessionId;
+                _client.Context.Session.Id = _currentSessionId;
                 _client.Context.Device.OperatingSystem = RuntimeEnvironment.OperatingSystem;
             }
             catch (Exception e)

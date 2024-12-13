@@ -30,16 +30,21 @@ namespace Uno.DevTools.Telemetry
     {
         public TelemetryCommonProperties(
             string storageDirectoryPath,
+            Assembly versionAssembly,
             Func<string>? getCurrentDirectory = null)
         {
             _getCurrentDirectory = getCurrentDirectory ?? Directory.GetCurrentDirectory;
             _storageDirectoryPath = storageDirectoryPath;
+            _versionAssembly = versionAssembly;
         }
 
         private Func<string> _getCurrentDirectory;
         private string _storageDirectoryPath;
+        private readonly Assembly _versionAssembly;
+
         public const string OSVersion = "OS Version";
         public const string OSPlatform = "OS Platform";
+        public const string OSArchitecture = "OS Architecture";
         public const string OutputRedirected = "Output Redirected";
         public const string RuntimeId = "Runtime Id";
         public const string MachineId = "Machine ID";
@@ -58,6 +63,7 @@ namespace Uno.DevTools.Telemetry
             {
                 { OSVersion, RuntimeEnvironment.OperatingSystemVersion },
                 { OSPlatform, RuntimeEnvironment.OperatingSystemPlatform.ToString() },
+                { OSArchitecture, RuntimeInformation.OSArchitecture.ToString() },
                 { OutputRedirected, Console.IsOutputRedirected.ToString() },
                 { RuntimeId, RuntimeEnvironment.GetRuntimeIdentifier() },
                 { ProductVersion, GetProductVersion() },
@@ -155,7 +161,7 @@ namespace Uno.DevTools.Telemetry
 
         private string GetProductVersion()
         {
-            if (this.GetType().Assembly.GetCustomAttributes(typeof(AssemblyInformationalVersionAttribute)).FirstOrDefault() is AssemblyInformationalVersionAttribute attribute)
+            if (_versionAssembly.GetCustomAttributes(typeof(AssemblyInformationalVersionAttribute)).FirstOrDefault() is AssemblyInformationalVersionAttribute attribute)
             {
                 return attribute.InformationalVersion;
             }

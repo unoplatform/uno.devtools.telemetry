@@ -31,7 +31,7 @@ namespace Uno.DevTools.Telemetry
         private string? _settingsStorageDirectoryPath;
         private PersistenceChannel.PersistenceChannel? _persistenceChannel;
         private string _instrumentationKey;
-        private static string _eventNamePrefix;
+        private string _eventNamePrefix;
         private readonly Func<string>? _currentDirectoryProvider;
         private const string TelemetryOptout = "UNO_PLATFORM_TELEMETRY_OPTOUT";
 
@@ -195,7 +195,7 @@ namespace Uno.DevTools.Telemetry
             }
         }
 
-        private static string PrependProducerNamespace(string eventName)
+        private string PrependProducerNamespace(string eventName)
         {
             return _eventNamePrefix + "/" + eventName;
         }

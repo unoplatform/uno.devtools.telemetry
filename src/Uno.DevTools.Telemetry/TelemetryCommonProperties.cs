@@ -22,6 +22,7 @@ using System.Reflection;
 using Uno.DevTools.Telemetry.Helpers;
 using System.Security.Cryptography;
 using System.Net.NetworkInformation;
+using System.Globalization;
 
 namespace Uno.DevTools.Telemetry
 {
@@ -47,6 +48,7 @@ namespace Uno.DevTools.Telemetry
         public const string CurrentPathHash = "Current Path Hash";
         public const string KernelVersion = "Kernel Version";
         public const string IsRunningCI = "IsRunningCI";
+        public const string CurrentCulture = "CurrentCulture";
 
         private const string TelemetryProfileEnvironmentVariable = "DOTNET_CLI_TELEMETRY_PROFILE";
 
@@ -63,6 +65,7 @@ namespace Uno.DevTools.Telemetry
                 { MachineId, GetMachineId() },
                 { CurrentPathHash, HashBuilder.Build(_getCurrentDirectory()) },
                 { KernelVersion, GetKernelVersion() },
+                { CurrentCulture, CultureInfo.CurrentCulture.IetfLanguageTag },
             };
 
             var runningCI = GetIsRunningCI();

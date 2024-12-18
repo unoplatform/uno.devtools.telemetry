@@ -123,6 +123,20 @@ namespace Uno.DevTools.Telemetry
             }
         }
 
+        public async Task FlushAsync(CancellationToken ct)
+        {
+            if (!Enabled || _trackEventTask == null)
+            {
+                return;
+            }
+
+            // Skip the wait if the task has not yet been activated
+            if (_trackEventTask.Status != TaskStatus.WaitingForActivation)
+            {
+                await Task.WhenAny(_trackEventTask, Task.Delay(-1, ct));
+            }
+        }
+
         public void Dispose()
         {
             _persistenceChannel?.Dispose();

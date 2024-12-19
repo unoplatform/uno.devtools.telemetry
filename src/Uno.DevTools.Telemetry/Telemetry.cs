@@ -176,7 +176,11 @@ namespace Uno.DevTools.Telemetry
                 _commonProperties = new TelemetryCommonProperties(_settingsStorageDirectoryPath, _versionAssembly, _currentDirectoryProvider).GetTelemetryCommonProperties();
                 _commonMeasurements = new Dictionary<string, double>();
 
-                _telemetryConfig = new TelemetryConfiguration { InstrumentationKey = _instrumentationKey };
+                _telemetryConfig = new TelemetryConfiguration {
+                    InstrumentationKey = _instrumentationKey,
+                    TelemetryChannel = _persistenceChannel
+                };
+
                 _client = new TelemetryClient(_telemetryConfig);
                 _client.InstrumentationKey = _instrumentationKey;
                 _client.Context.User.Id = _commonProperties[TelemetryCommonProperties.MachineId];

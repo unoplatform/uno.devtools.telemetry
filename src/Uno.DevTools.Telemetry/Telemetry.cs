@@ -130,8 +130,7 @@ namespace Uno.DevTools.Telemetry
                 return;
             }
 
-            // Skip the wait if the task has not yet been activated
-            if (_trackEventTask.Status != TaskStatus.WaitingForActivation)
+            if (!_trackEventTask.IsCompleted)
             {
                 await Task.WhenAny(_trackEventTask, Task.Delay(-1, ct));
             }

@@ -7,20 +7,15 @@
 //	- Updated for nullability
 //
 
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Threading.Tasks;
 using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.DotNet.PlatformAbstractions;
+using System.Diagnostics;
+using System.Reflection;
 
 namespace Uno.DevTools.Telemetry
 {
-    public class Telemetry
+    public class Telemetry : ITelemetry
     {
         private string? _currentSessionId;
         private TelemetryClient? _client;
@@ -175,7 +170,8 @@ namespace Uno.DevTools.Telemetry
                 _commonProperties = new TelemetryCommonProperties(_settingsStorageDirectoryPath, _versionAssembly, _currentDirectoryProvider).GetTelemetryCommonProperties();
                 _commonMeasurements = new Dictionary<string, double>();
 
-                _telemetryConfig = new TelemetryConfiguration {
+                _telemetryConfig = new TelemetryConfiguration
+                {
                     InstrumentationKey = _instrumentationKey,
                     TelemetryChannel = _persistenceChannel
                 };

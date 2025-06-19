@@ -31,16 +31,19 @@ namespace Uno.DevTools.Telemetry
         public TelemetryCommonProperties(
             string storageDirectoryPath,
             Assembly versionAssembly,
+            string productName,
             Func<string>? getCurrentDirectory = null)
         {
             _getCurrentDirectory = getCurrentDirectory ?? Directory.GetCurrentDirectory;
             _storageDirectoryPath = storageDirectoryPath;
             _versionAssembly = versionAssembly;
+            _productName = productName;
         }
 
         private Func<string> _getCurrentDirectory;
         private string _storageDirectoryPath;
         private readonly Assembly _versionAssembly;
+        private readonly string _productName;
 
         public const string OSVersion = "OS Version";
         public const string OSPlatform = "OS Platform";
@@ -49,6 +52,7 @@ namespace Uno.DevTools.Telemetry
         public const string RuntimeId = "Runtime Id";
         public const string MachineId = "Machine ID";
         public const string ProductVersion = "Product Version";
+        public const string ProductName = "Product Name";
         public const string TelemetryProfile = "Telemetry Profile";
         public const string CurrentPathHash = "Current Path Hash";
         public const string KernelVersion = "Kernel Version";
@@ -67,6 +71,7 @@ namespace Uno.DevTools.Telemetry
                 { OutputRedirected, Console.IsOutputRedirected.ToString() },
                 { RuntimeId, RuntimeEnvironment.GetRuntimeIdentifier() },
                 { ProductVersion, GetProductVersion() },
+                { ProductName, _productName },
                 { TelemetryProfile, Environment.GetEnvironmentVariable(TelemetryProfileEnvironmentVariable) ?? "" },
                 { MachineId, GetMachineId() },
                 { CurrentPathHash, HashBuilder.Build(_getCurrentDirectory()) },
@@ -168,7 +173,6 @@ namespace Uno.DevTools.Telemetry
 
             return "Unknown";
         }
-
 
         /// <summary>
         /// Returns a string identifying the OS kernel.

@@ -29,6 +29,7 @@ namespace Uno.DevTools.Telemetry
         private string _instrumentationKey;
         private string _eventNamePrefix;
         private readonly Assembly _versionAssembly;
+        private readonly string? _productName;
         private readonly Func<string>? _currentDirectoryProvider;
         private const string TelemetryOptout = "UNO_PLATFORM_TELEMETRY_OPTOUT";
 
@@ -43,6 +44,7 @@ namespace Uno.DevTools.Telemetry
         /// <param name="blockThreadInitialization">Block the execution of the constructor until the telemetry is initialized</param>
         /// <param name="sessionId">Defines the session ID for this instance</param>
         /// <param name="versionAssembly">The assembly to use to get the version to report in telemetry</param>
+        /// <param name="productName">The product name to use in the common properties. If null, versionAssembly.Name is used instead.</param>
         public Telemetry(
             string instrumentationKey,
             string eventNamePrefix,
@@ -50,12 +52,14 @@ namespace Uno.DevTools.Telemetry
             string? sessionId = null,
             bool blockThreadInitialization = false,
             Func<bool?>? enabledProvider = null,
-            Func<string>? currentDirectoryProvider = null)
+            Func<string>? currentDirectoryProvider = null,
+            string? productName = null)
         {
             _instrumentationKey = instrumentationKey;
             _currentDirectoryProvider = currentDirectoryProvider;
             _eventNamePrefix = eventNamePrefix;
             _versionAssembly = versionAssembly;
+            _productName = productName;
 
             if (bool.TryParse(Environment.GetEnvironmentVariable(TelemetryOptout), out var telemetryOptOut))
             {
@@ -167,7 +171,12 @@ namespace Uno.DevTools.Telemetry
 
                 _persistenceChannel.SendingInterval = TimeSpan.FromMilliseconds(1);
 
-                _commonProperties = new TelemetryCommonProperties(_settingsStorageDirectoryPath, _versionAssembly, _currentDirectoryProvider).GetTelemetryCommonProperties();
+                _commonProperties = new TelemetryCommonProperties(
+                    _settingsStorageDirectoryPath,
+                    _versionAssembly,
+                    _productName ?? _versionAssembly.GetName().Name ?? "Unknown",
+                    _currentDirectoryProvider
+                    ).GetTelemetryCommonProperties();
                 _commonMeasurements = new Dictionary<string, double>();
 
                 _telemetryConfig = new TelemetryConfiguration

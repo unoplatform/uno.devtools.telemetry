@@ -63,7 +63,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		///     A boolean value that indicates if the sender should be stopped. The sender's while loop is checking this boolean
 		///     value.
 		/// </summary>
-		private bool _stopped;
+		private int _stopped;
 
 		/// <summary>
 		///     The transmissions storage.
@@ -90,7 +90,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </param>
 		internal Sender(BaseStorageService storage, PersistenceTransmitter transmitter, bool startSending = true)
 		{
-			_stopped = false;
+			_stopped = 0;
 			DelayHandler = new AutoResetEvent(false);
 			_stoppedHandler = new AutoResetEvent(false);
 			_drainingTimeout = TimeSpan.FromSeconds(100);
@@ -149,7 +149,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			// After delayHandler is set, a sending iteration will immediately start. 
 			// Setting <c>stopped</c> to true, will cause the iteration to skip the actual sending and stop immediately. 
-			_stopped = true;
+			Interlocked.Exchange(ref _stopped, 1);
 			DelayHandler.Set();
 
 			// if delayHandler was set while a transmission was being sent, the return task will wait for it to finish, for an additional second,
@@ -175,11 +175,11 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			var sendingInterval = _sendingIntervalOnNoData;
 			try
 			{
-				while (!_stopped)
+				while (Interlocked.CompareExchange(ref _stopped, 0, 0) == 0)
 				{
 					using (var transmission = _storage.Peek())
 					{
-						if (_stopped)
+						if (Interlocked.CompareExchange(ref _stopped, 0, 0) != 0)
 						{
 							// This second verification is required for cases where 'stopped' was set while peek was happening. 
 							// Once the actual sending starts the design is to wait until it finishes and deletes the transmission. 

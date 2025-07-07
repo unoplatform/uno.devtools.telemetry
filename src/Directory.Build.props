@@ -11,6 +11,9 @@
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<IncludeSymbols>true</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+		<Authors>Uno Platform</Authors>
+		<Copyright>Copyright (c) Uno Platform 2015-$([System.DateTime]::Now.ToString(`yyyy`))</Copyright>
 	</PropertyGroup>
 	
 	<PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">

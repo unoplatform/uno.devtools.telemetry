@@ -60,6 +60,10 @@ telemetry.TrackEvent("AppStarted");
 telemetry.TrackEvent("UserAction", new Dictionary<string, string> { { "Action", "Clicked" } }, null);
 ```
 
+> **Warning:**
+> When using `ITelemetry` (including `FileTelemetry` or any implementation), do not modify any dictionary or list after passing it as a parameter to telemetry methods (such as `TrackEvent`).
+> All collections passed to telemetry should be considered owned by the telemetry system and must not be mutated by the caller after the call. Mutating collections after passing them may cause race conditions or undefined behavior.
+
 ### File-based Telemetry
 By default, telemetry is persisted locally before being sent. You can configure the storage location and behavior by customizing the `Telemetry` constructor.
 

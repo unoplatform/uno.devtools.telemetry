@@ -55,7 +55,15 @@ namespace Uno.DevTools.Telemetry
             var directory = Path.GetDirectoryName(filePath);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             {
-                Directory.CreateDirectory(directory);
+                try
+                {
+                    Directory.CreateDirectory(directory);
+                }
+                catch (Exception ex)
+                {
+                    // Log the exception for diagnostics (but do not throw)
+                    System.Diagnostics.Debug.WriteLine($"[FileTelemetry] Failed to create directory '{directory}': {ex}");
+                }
             }
         }
 
@@ -132,9 +140,10 @@ namespace Uno.DevTools.Telemetry
                     var line = _contextPrefix + ": " + json + Environment.NewLine;
                     File.AppendAllText(_filePath, line);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore file write errors in telemetry to avoid breaking the application
+                    // Log the exception for diagnostics (but do not throw)
+                    System.Diagnostics.Debug.WriteLine($"[FileTelemetry] Failed to write telemetry to '{_filePath}': {ex}");
                 }
             }
         }

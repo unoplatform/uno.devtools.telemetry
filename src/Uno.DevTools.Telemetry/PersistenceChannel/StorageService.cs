@@ -120,13 +120,13 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		internal override StorageTransmission? Peek()
 		{
-			IEnumerable<string> files = GetFiles("*.trn", 50);
+			var files = GetFiles("*.trn", 50);
 
 			if (PeekedTransmissions is not null)
 			{
 				lock (_peekLockObj)
 				{
-					foreach (string file in files)
+					foreach (var file in files)
 					{
 						try
 						{
@@ -135,7 +135,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 								_deletedFilesQueue.Contains(file) == false)
 							{
 								// Load the transmission from disk.
-								StorageTransmission storageTransmissionItem = LoadTransmissionFromFileAsync(file)
+								var storageTransmissionItem = LoadTransmissionFromFileAsync(file)
 									.ConfigureAwait(false).GetAwaiter().GetResult();
 
 								// when item is disposed it should be removed from the peeked list.
@@ -172,7 +172,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				// Initial storage size calculation. 
 				CalculateSize();
 
-				long fileSize = GetSize(item.FileName);
+				var fileSize = GetSize(item.FileName);
 				File.Delete(Path.Combine(StorageFolder, item.FileName));
 
 				_deletedFilesQueue.Enqueue(item.FileName);
@@ -212,7 +212,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 				// Writes content to a temporary file and only then rename to avoid the Peek from reading the file before it is being written.
 				// Creates the temp file name
-				string tempFileName = Guid.NewGuid().ToString("N");
+				var tempFileName = Guid.NewGuid().ToString("N");
 
 				// Now that the file got created we can increase the files count
 				Interlocked.Increment(ref _storageCountFiles);
@@ -221,12 +221,12 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				await SaveTransmissionToFileAsync(transmission, tempFileName).ConfigureAwait(false);
 
 				// Now that the file is written increase storage size. 
-				long temporaryFileSize = GetSize(tempFileName);
+				var temporaryFileSize = GetSize(tempFileName);
 				Interlocked.Add(ref _storageSize, temporaryFileSize);
 
 				// Creates a new file name
-				string now = DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
-				string newFileName = string.Format(CultureInfo.InvariantCulture, "{0}_{1}.trn", now, tempFileName);
+				var now = DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+				var newFileName = string.Format(CultureInfo.InvariantCulture, "{0}_{1}.trn", now, tempFileName);
 
 				// Renames the file
 				File.Move(Path.Combine(StorageFolder, tempFileName), Path.Combine(StorageFolder, newFileName));
@@ -253,7 +253,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			}
 			catch (UnauthorizedAccessException)
 			{
-				string message =
+				var message =
 					string.Format(
 						CultureInfo.InvariantCulture,
 						"Failed to save transmission to file. UnauthorizedAccessException. File path: {0}, FileName: {1}",
@@ -275,14 +275,14 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 				using (Stream stream = File.OpenRead(Path.Combine(StorageFolder, file)))
 				{
-					StorageTransmission storageTransmissionItem =
+					var storageTransmissionItem =
 						await StorageTransmission.CreateFromStreamAsync(stream, file).ConfigureAwait(false);
 					return storageTransmissionItem;
 				}
 			}
 			catch (Exception e)
 			{
-				string message =
+				var message =
 					string.Format(
 						CultureInfo.InvariantCulture,
 						"Failed to load transmission from file. File path: {0}, FileName: {1}, Exception: {2}",
@@ -325,7 +325,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
             if (StorageFolder is not null)
             {
-                using (FileStream stream = File.OpenRead(Path.Combine(StorageFolder, file)))
+                using (var stream = File.OpenRead(Path.Combine(StorageFolder, file)))
 				{
 					return stream.Length;
 				}
@@ -344,12 +344,12 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
             if (StorageFolder is not null)
             {
-                string[] storageFiles = Directory.GetFiles(StorageFolder, "*.*");
+                var storageFiles = Directory.GetFiles(StorageFolder, "*.*");
 
 				_storageCountFiles = storageFiles.Length;
 
 				long storageSizeInBytes = 0;
-				foreach (string file in storageFiles)
+				foreach (var file in storageFiles)
 				{
 					storageSizeInBytes += GetSize(file);
 				}
@@ -372,10 +372,10 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				if (StorageFolder is not null)
 				{
-					IEnumerable<string> files = GetFiles("*.tmp", 50);
-					foreach (string file in files)
+					var files = GetFiles("*.tmp", 50);
+					foreach (var file in files)
 					{
-						DateTime creationTime = File.GetCreationTimeUtc(Path.Combine(StorageFolder, file));
+						var creationTime = File.GetCreationTimeUtc(Path.Combine(StorageFolder, file));
 						// if the file is older then 5 minutes - delete it.
 						if (DateTime.UtcNow - creationTime >= TimeSpan.FromMinutes(5))
 						{

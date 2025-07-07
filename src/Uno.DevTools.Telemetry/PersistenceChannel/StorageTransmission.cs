@@ -46,11 +46,11 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// <returns>Return transmission loaded from file; return null if the file is corrupted.</returns>
 		internal static async Task<StorageTransmission> CreateFromStreamAsync(Stream stream, string fileName)
 		{
-			StreamReader reader = new StreamReader(stream);
-			Uri address = await ReadAddressAsync(reader).ConfigureAwait(false);
-			string contentType = await ReadHeaderAsync(reader, "Content-Type").ConfigureAwait(false);
-			string contentEncoding = await ReadHeaderAsync(reader, "Content-Encoding").ConfigureAwait(false);
-			byte[] content = await ReadContentAsync(reader).ConfigureAwait(false);
+			var reader = new StreamReader(stream);
+			var address = await ReadAddressAsync(reader).ConfigureAwait(false);
+			var contentType = await ReadHeaderAsync(reader, "Content-Type").ConfigureAwait(false);
+			var contentEncoding = await ReadHeaderAsync(reader, "Content-Encoding").ConfigureAwait(false);
+			var content = await ReadContentAsync(reader).ConfigureAwait(false);
 			return new StorageTransmission(fileName, address, content, contentType, contentEncoding);
 		}
 
@@ -59,7 +59,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		internal static async Task SaveAsync(Transmission transmission, Stream stream)
 		{
-			StreamWriter writer = new StreamWriter(stream);
+			var writer = new StreamWriter(stream);
 			try
 			{
 				await writer.WriteLineAsync(transmission.EndpointAddress.ToString()).ConfigureAwait(false);
@@ -77,14 +77,14 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 		private static async Task<string> ReadHeaderAsync(TextReader reader, string headerName)
 		{
-			string? line = await reader.ReadLineAsync().ConfigureAwait(false);
+			var line = await reader.ReadLineAsync().ConfigureAwait(false);
 			if (string.IsNullOrEmpty(line))
 			{
 				throw new FormatException(string.Format(CultureInfo.InvariantCulture, "{0} header is expected.",
 					headerName));
 			}
 
-			string[] parts = line.Split(':');
+			var parts = line.Split(':');
 			if (parts.Length != 2)
 			{
 				throw new FormatException(string.Format(CultureInfo.InvariantCulture,
@@ -102,19 +102,19 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 		private static async Task<Uri> ReadAddressAsync(TextReader reader)
 		{
-			string? addressLine = await reader.ReadLineAsync().ConfigureAwait(false);
+			var addressLine = await reader.ReadLineAsync().ConfigureAwait(false);
 			if (string.IsNullOrEmpty(addressLine))
 			{
 				throw new FormatException("Transmission address is expected.");
 			}
 
-			Uri address = new Uri(addressLine);
+			var address = new Uri(addressLine);
 			return address;
 		}
 
 		private static async Task<byte[]> ReadContentAsync(TextReader reader)
 		{
-			string? content = await reader.ReadToEndAsync().ConfigureAwait(false);
+			var content = await reader.ReadToEndAsync().ConfigureAwait(false);
 			if (string.IsNullOrEmpty(content) || content == Environment.NewLine)
 			{
 				throw new FormatException("Content is expected.");
@@ -127,7 +127,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			if (disposing)
 			{
-				Action<StorageTransmission>? disposingDelegate = Disposing;
+				var disposingDelegate = Disposing;
 				disposingDelegate?.Invoke(this);
 			}
 		}

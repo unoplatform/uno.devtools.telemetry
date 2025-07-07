@@ -171,13 +171,13 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		protected void SendLoop()
 		{
-			TimeSpan prevSendingInterval = TimeSpan.Zero;
-			TimeSpan sendingInterval = _sendingIntervalOnNoData;
+			var prevSendingInterval = TimeSpan.Zero;
+			var sendingInterval = _sendingIntervalOnNoData;
 			try
 			{
 				while (!_stopped)
 				{
-					using (StorageTransmission? transmission = _storage.Peek())
+					using (var transmission = _storage.Peek())
 					{
 						if (_stopped)
 						{
@@ -190,7 +190,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 						// If there is a transmission to send - send it. 
 						if (transmission != null)
 						{
-							bool shouldRetry = Send(transmission, ref sendingInterval);
+							var shouldRetry = Send(transmission, ref sendingInterval);
 							if (!shouldRetry)
 							{
 								// If retry is not required - delete the transmission.
@@ -230,7 +230,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				if (transmission != null)
 				{
-					bool isConnected = NetworkInterface.GetIsNetworkAvailable();
+					var isConnected = NetworkInterface.GetIsNetworkAvailable();
 
 					// there is no internet connection available, return than.
 					if (!isConnected)
@@ -248,7 +248,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			}
 			catch (WebException e)
 			{
-				int? statusCode = GetStatusCode(e);
+				var statusCode = GetStatusCode(e);
 				nextSendInterval = CalculateNextInterval(statusCode, nextSendInterval, _maxIntervalBetweenRetries);
 				return IsRetryable(statusCode, e.Status);
 			}
@@ -337,7 +337,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				return TimeSpan.FromSeconds(1);
 			}
 
-			double nextIntervalInSeconds = Math.Min(currentSendInterval.TotalSeconds * 2, maxInterval.TotalSeconds);
+			var nextIntervalInSeconds = Math.Min(currentSendInterval.TotalSeconds * 2, maxInterval.TotalSeconds);
 
 			return TimeSpan.FromSeconds(nextIntervalInSeconds);
 		}

@@ -10,15 +10,17 @@ namespace Uno.DevTools.Telemetry.Tests
         private string GetTempFilePath() => Path.Combine(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
 
         [TestMethod]
-        public void TrackEvent_WritesToFile()
+        public void Given_FileTelemetry_When_TrackEvent_Then_WritesToFile()
         {
+            // Arrange
             var filePath = GetTempFilePath();
             var telemetry = new FileTelemetry(filePath, "test");
 
+            // Act
             telemetry.TrackEvent("TestEvent", new Dictionary<string, string> { { "foo", "bar" } }, null);
-
             telemetry.Flush();
 
+            // Assert
             var lines = File.ReadAllLines(filePath);
             lines.Should().HaveCount(1);
             lines[0].Should().Contain("TestEvent");
@@ -27,17 +29,20 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
-        public void TrackEvent_MultipleEvents_AreAllWritten()
+        public void Given_FileTelemetry_When_TrackEvent_MultipleEvents_Then_AllAreWritten()
         {
+            // Arrange
             var filePath = GetTempFilePath();
             var telemetry = new FileTelemetry(filePath, "multi");
 
+            // Act
             for (var i = 0; i < 5; i++)
             {
                 telemetry.TrackEvent($"Event{i}", (IDictionary<string, string>?)null, (IDictionary<string, double>?)null);
             }
             telemetry.Flush();
 
+            // Assert
             var lines = File.ReadAllLines(filePath);
             lines.Should().HaveCount(5);
             for (var i = 0; i < 5; i++)
@@ -47,8 +52,9 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
-        public void TrackEvent_MultiThreaded_StressTest()
+        public void Given_FileTelemetry_When_TrackEvent_MultiThreaded_Then_AllEventsAreWrittenWithoutError()
         {
+            // Arrange
             var filePath = GetTempFilePath();
             var telemetry = new FileTelemetry(filePath, "stress");
             var threadCount = 16;
@@ -77,11 +83,13 @@ namespace Uno.DevTools.Telemetry.Tests
                 }));
             }
 
+            // Act
             threads.ForEach(t => t.Start());
             startEvent.Set();
             threads.ForEach(t => t.Join());
             telemetry.Flush();
 
+            // Assert
             exceptions.Should().BeEmpty();
             var lines = File.ReadAllLines(filePath);
             lines.Should().HaveCount(totalEvents);

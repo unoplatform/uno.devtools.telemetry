@@ -26,7 +26,7 @@ using System.Globalization;
 
 namespace Uno.DevTools.Telemetry
 {
-    internal class TelemetryCommonProperties
+    internal sealed class TelemetryCommonProperties
     {
         public TelemetryCommonProperties(
             string storageDirectoryPath,
@@ -40,8 +40,8 @@ namespace Uno.DevTools.Telemetry
             _productName = productName;
         }
 
-        private Func<string> _getCurrentDirectory;
-        private string _storageDirectoryPath;
+        private readonly Func<string> _getCurrentDirectory;
+        private readonly string _storageDirectoryPath;
         private readonly Assembly _versionAssembly;
         private readonly string _productName;
 

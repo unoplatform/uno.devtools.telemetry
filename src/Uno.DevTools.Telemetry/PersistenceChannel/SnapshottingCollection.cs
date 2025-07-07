@@ -60,7 +60,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			lock (Collection)
 			{
-				bool removed = Collection.Remove(item);
+				var removed = Collection.Remove(item);
 				if (removed)
 				{
 					snapshot = default;
@@ -84,7 +84,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 		protected TCollection GetSnapshot()
 		{
-			TCollection? localSnapshot = snapshot;
+			var localSnapshot = snapshot;
 			if (localSnapshot == null)
 			{
 				lock (Collection)

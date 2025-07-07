@@ -17,7 +17,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 	/// <summary>
 	///     Implements throttled and persisted transmission of telemetry to Application Insights.
 	/// </summary>
-	internal class PersistenceTransmitter : IDisposable
+	internal sealed class PersistenceTransmitter : IDisposable
 	{
 		/// <summary>
 		///     The number of times this object was disposed.

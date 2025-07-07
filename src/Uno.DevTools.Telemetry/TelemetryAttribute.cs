@@ -13,7 +13,7 @@ namespace Uno.DevTools.Telemetry;
 /// [assembly: Telemetry("MyApp", EventsPrefix = "myapp/module")]
 /// </remarks>
 [AttributeUsage(AttributeTargets.Assembly)]
-public class TelemetryAttribute(string instrumentationKey) : Attribute
+public sealed class TelemetryAttribute(string instrumentationKey) : Attribute
 {
     /// <summary>
     /// Gets the instrumentation key used to identify the telemetry source.

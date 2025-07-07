@@ -19,6 +19,8 @@ namespace Uno.DevTools.Telemetry
     {
         private readonly string? _currentSessionId;
         private TelemetryClient? _client;
+        // These collections must be treated as immutable after construction.
+        // Do not mutate after initialization to avoid race conditions in concurrent scenarios.
         private Dictionary<string, string>? _commonProperties;
         private Dictionary<string, double>? _commonMeasurements;
         private TelemetryConfiguration? _telemetryConfig;

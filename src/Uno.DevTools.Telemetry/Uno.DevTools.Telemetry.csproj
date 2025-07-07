@@ -6,11 +6,12 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<PackageId>Uno.DevTools.Telemetry</PackageId>
-		<Authors>Uno Platform</Authors>
-		<Copyright>Copyright (c) Uno Platform 2015-$([System.DateTime]::Now.ToString(`yyyy`))</Copyright>
 		<Description>A development-time dependency for telemetry</Description>
 		<DevelopmentDependency>true</DevelopmentDependency>
+	</PropertyGroup>
+
+	<PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+		<PackageId>Uno.DevTools.Telemetry</PackageId>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageLicenseFile>LICENSE.md</PackageLicenseFile>
 	</PropertyGroup>
@@ -19,7 +20,7 @@
 		<SignAssembly>True</SignAssembly>
 		<AssemblyOriginatorKeyFile>sn.snk</AssemblyOriginatorKeyFile>
 	</PropertyGroup>
-	
+
 	<ItemGroup>
 		<PackageReference Include="Microsoft.ApplicationInsights" />
 		<PackageReference Include="Microsoft.DotNet.PlatformAbstractions" />

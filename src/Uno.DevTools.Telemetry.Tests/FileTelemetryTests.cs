@@ -1,8 +1,6 @@
-using AwesomeAssertions;
-using System;
 using System.Collections.Generic;
 using System.IO;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Threading;
 
 namespace Uno.DevTools.Telemetry.Tests
 {
@@ -45,6 +43,53 @@ namespace Uno.DevTools.Telemetry.Tests
             for (var i = 0; i < 5; i++)
             {
                 lines[i].Should().Contain($"Event{i}");
+            }
+        }
+
+        [TestMethod]
+        public void TrackEvent_MultiThreaded_StressTest()
+        {
+            var filePath = GetTempFilePath();
+            var telemetry = new FileTelemetry(filePath, "stress");
+            var threadCount = 16;
+            var eventsPerThread = 800;
+            var totalEvents = threadCount * eventsPerThread;
+            var threads = new List<Thread>();
+            var exceptions = new List<Exception>();
+            var startEvent = new ManualResetEventSlim(false);
+
+            for (var t = 0; t < threadCount; t++)
+            {
+                threads.Add(new Thread(() =>
+                {
+                    try
+                    {
+                        startEvent.Wait(); // Ensure all threads start together
+                        for (var i = 0; i < eventsPerThread; i++)
+                        {
+                            telemetry.TrackEvent($"StressEvent", new Dictionary<string, string> { { "thread", Thread.CurrentThread.ManagedThreadId.ToString() }, { "i", i.ToString() } }, null);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        lock (exceptions) { exceptions.Add(ex); }
+                    }
+                }));
+            }
+
+            threads.ForEach(t => t.Start());
+            startEvent.Set();
+            threads.ForEach(t => t.Join());
+            telemetry.Flush();
+
+            exceptions.Should().BeEmpty();
+            var lines = File.ReadAllLines(filePath);
+            lines.Should().HaveCount(totalEvents);
+            foreach (var line in lines)
+            {
+                line.Should().Contain("StressEvent");
+                line.Should().Contain("thread");
+                line.Should().Contain("i");
             }
         }
     }

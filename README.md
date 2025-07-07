@@ -116,3 +116,36 @@ Replace `path/to/YourApp.csproj` with the path to your application's project fil
 
 > **Tip:** You can also specify an absolute path for the log file (e.g., `C:\temp\telemetry.log`).
 
+## Advanced usage: typed/contextual telemetry with DI
+
+To inject contextualized telemetry by type:
+
+```csharp
+// In your Startup or Program.cs
+services.AddTelemetry();
+
+// Somewhere in your assembly containing the service
+[assembly: Telemetry("instrumentation-key", "prefix")]
+
+// In an application class
+public class MyService
+{
+    private readonly ITelemetry<MyService> _telemetry;
+    public MyService(ITelemetry<MyService> telemetry) // Telemetry will be properly configured using the [assembly: Telemetry] attribute
+    {
+        _telemetry = telemetry;
+    }
+    public void DoSomething()
+    {
+        _telemetry.TrackEvent("Action", new Dictionary<string, string> { { "key", "value" } }, null);
+    }
+}
+```
+
+The injected instance will automatically use the assembly-level configuration of `MyService` (the `[Telemetry]` attribute).
+
+- If the `UNO_PLATFORM_TELEMETRY_FILE` environment variable is set, the instance will be a `FileTelemetry`.
+- Otherwise, the instance will be a `Telemetry` (Application Insights).
+
+> **Note:** You can inject `ITelemetry<T>` for any type, and resolution will be automatic via the DI container.
+

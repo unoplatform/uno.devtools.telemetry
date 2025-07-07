@@ -6,6 +6,8 @@
     <PackageVersion Include="PolySharp" Version="1.15.0" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="1.7.3" />
     <PackageVersion Include="System.Text.Json" Version="9.0.6" />
+    <PackageVersion Include="AwesomeAssertions" Version="9.0.0" />
   </ItemGroup>
 </Project>

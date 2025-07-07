@@ -50,8 +50,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			if (telemetryItem != null)
 			{
-				byte[] data = JsonSerializer.Serialize(new[] { telemetryItem });
-				Transmission transmission = new Transmission(
+				var data = JsonSerializer.Serialize(new[] { telemetryItem });
+				var transmission = new Transmission(
 					EndpointAddress,
 					data,
 					"application/x-json-stream",

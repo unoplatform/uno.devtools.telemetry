@@ -11,7 +11,7 @@ namespace Uno.DevTools.Telemetry
     /// A telemetry implementation that writes events to a file for testing purposes.
     /// Can use either individual files per context or a single file with prefixes.
     /// </summary>
-    public class FileTelemetry : ITelemetry
+    public sealed class FileTelemetry : ITelemetry
     {
         private static readonly JsonSerializerOptions JsonOptions = new()
         {

@@ -1,10 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 [assembly: Uno.DevTools.Telemetry.Telemetry("test-key", EventsPrefix = "test-prefix")] // For test context
 
 namespace Uno.DevTools.Telemetry.Tests;
@@ -33,10 +26,11 @@ public class TelemetryGenericDiTests
 
             // Assert
             var lines = File.ReadAllLines(tempFile).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
-            Assert.AreEqual(1, lines.Length, "Should have exactly one telemetry event written");
-            StringAssert.Contains(lines[0], "TestEvent");
-            StringAssert.Contains(lines[0], "foo");
-            StringAssert.Contains(lines[0], "bar");
+            lines.Should().HaveCount(1, "Should have exactly one telemetry event written");
+            lines[0].Should().Contain("TestEvent");
+            lines[0].Should().Contain("foo");
+            lines[0].Should().Contain("bar");
+            lines[0].Should().Contain("test-prefix");
         }
         finally
         {

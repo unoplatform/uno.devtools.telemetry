@@ -19,7 +19,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 	/// <summary>
 	///     Fetch transmissions from the storage and sends it.
 	/// </summary>
-	internal class Sender : IDisposable
+	internal sealed class Sender : IDisposable
 	{
 		/// <summary>
 		///     The default sending interval.
@@ -29,7 +29,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// <summary>
 		///     A wait handle that flags the sender when to start sending again. The type is protected for unit test.
 		/// </summary>
-		protected readonly AutoResetEvent DelayHandler;
+		private readonly AutoResetEvent DelayHandler;
 
 		/// <summary>
 		///     Holds the maximum time for the exponential back-off algorithm. The sending interval will grow on every HTTP
@@ -169,7 +169,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// <summary>
 		///     Send transmissions in a loop.
 		/// </summary>
-		protected void SendLoop()
+		private void SendLoop()
 		{
 			var prevSendingInterval = TimeSpan.Zero;
 			var sendingInterval = _sendingIntervalOnNoData;
@@ -224,7 +224,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		///     iteration.
 		/// </param>
 		/// <returns>True, if there was sent error and we need to retry sending, otherwise false.</returns>
-		protected virtual bool Send(StorageTransmission transmission, ref TimeSpan nextSendInterval)
+		private bool Send(StorageTransmission transmission, ref TimeSpan nextSendInterval)
 		{
 			try
 			{

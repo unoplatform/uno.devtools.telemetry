@@ -15,7 +15,7 @@ using System.Reflection;
 
 namespace Uno.DevTools.Telemetry
 {
-    public class Telemetry : ITelemetry
+    public sealed class Telemetry : ITelemetry
     {
         private readonly string? _currentSessionId;
         private TelemetryClient? _client;

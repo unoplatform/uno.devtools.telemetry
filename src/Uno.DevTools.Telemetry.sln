@@ -5,6 +5,16 @@ VisualStudioVersion = 17.13.35507.96 d17.13
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Uno.DevTools.Telemetry", "Uno.DevTools.Telemetry\Uno.DevTools.Telemetry.csproj", "{291C2E10-5CAA-465B-A14E-CB7954AB25A8}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Files", "Files", "{A7C5A7B2-2558-4941-AA1E-3B332819197B}"
+	ProjectSection(SolutionItems) = preProject
+		Directory.Build.props = Directory.Build.props
+		Directory.Build.targets = Directory.Build.targets
+		Directory.Packages.props = Directory.Packages.props
+		global.json = global.json
+		..\README.md = ..\README.md
+		..\.github\workflows\ci.yml = ..\.github\workflows\ci.yml
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

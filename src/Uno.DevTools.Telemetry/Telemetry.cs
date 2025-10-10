@@ -35,6 +35,8 @@ namespace Uno.DevTools.Telemetry
 
         public bool Enabled { get; }
 
+        public string? MachineId { get; }
+
         /// <summary>
         /// Initializes a new instance of the <see cref="Telemetry"/> class.
         /// </summary>
@@ -80,6 +82,7 @@ namespace Uno.DevTools.Telemetry
             if (blockThreadInitialization)
             {
                 InitializeTelemetry();
+                MachineId = _client?.Context.User.Id;
             }
             else
             {

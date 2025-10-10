@@ -13,6 +13,7 @@ namespace Uno.DevTools.Telemetry
     public interface ITelemetry
     {
         bool Enabled { get; }
+        string? MachineId { get; }
 
         void Dispose();
         void Flush();

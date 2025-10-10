@@ -35,8 +35,6 @@ namespace Uno.DevTools.Telemetry
 
         public bool Enabled { get; }
 
-        public string? MachineId { get; }
-
         /// <summary>
         /// Initializes a new instance of the <see cref="Telemetry"/> class.
         /// </summary>
@@ -82,7 +80,6 @@ namespace Uno.DevTools.Telemetry
             if (blockThreadInitialization)
             {
                 InitializeTelemetry();
-                MachineId = _client?.Context.User.Id;
             }
             else
             {
@@ -136,6 +133,21 @@ namespace Uno.DevTools.Telemetry
             {
                 await Task.WhenAny(_trackEventTask, Task.Delay(-1, ct));
             }
+        }
+
+        public async Task<string?> GetMachineIdAsync(CancellationToken ct)
+        {
+            if (_trackEventTask == null)
+            {
+                return null;
+            }
+
+            if (!_trackEventTask.IsCompleted)
+            {
+                await Task.WhenAny(_trackEventTask);
+            }
+
+            return _client?.Context?.User?.Id;
         }
 
         public void Dispose()

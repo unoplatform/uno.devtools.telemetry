@@ -13,11 +13,11 @@ namespace Uno.DevTools.Telemetry
     public interface ITelemetry
     {
         bool Enabled { get; }
-        string? MachineId { get; }
 
         void Dispose();
         void Flush();
         Task FlushAsync(CancellationToken ct);
+        Task<string?> GetMachineIdAsync(CancellationToken ct);
         void ThreadBlockingTrackEvent(string eventName, IDictionary<string, string> properties, IDictionary<string, double> measurements);
         void TrackEvent(string eventName, (string key, string value)[]? properties, (string key, double value)[]? measurements);
         void TrackEvent(string eventName, IDictionary<string, string>? properties, IDictionary<string, double>? measurements);

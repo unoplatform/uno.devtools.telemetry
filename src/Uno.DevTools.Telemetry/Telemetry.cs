@@ -32,6 +32,7 @@ namespace Uno.DevTools.Telemetry
         private readonly string? _productName;
         private readonly Func<string>? _currentDirectoryProvider;
         private const string TelemetryOptout = "UNO_PLATFORM_TELEMETRY_OPTOUT";
+        private readonly TaskCompletionSource<string?> _machineIdTcs = new TaskCompletionSource<string?>();
 
         public bool Enabled { get; }
 
@@ -135,19 +136,9 @@ namespace Uno.DevTools.Telemetry
             }
         }
 
-        public async Task<string?> GetMachineIdAsync(CancellationToken ct)
+        public Task<string?> GetMachineIdAsync(CancellationToken ct)
         {
-            if (_trackEventTask == null)
-            {
-                return null;
-            }
-
-            if (!_trackEventTask.IsCompleted)
-            {
-                await Task.WhenAny(_trackEventTask);
-            }
-
-            return _client?.Context?.User?.Id;
+            return _machineIdTcs.Task;
         }
 
         public void Dispose()
@@ -205,10 +196,13 @@ namespace Uno.DevTools.Telemetry
                 _client.Context.User.Id = _commonProperties[TelemetryCommonProperties.MachineId];
                 _client.Context.Session.Id = _currentSessionId;
                 _client.Context.Device.OperatingSystem = RuntimeEnvironment.OperatingSystem;
+
+                _machineIdTcs.TrySetResult(_client.Context.User.Id);
             }
             catch (Exception e)
             {
                 _client = null;
+                _machineIdTcs.TrySetResult(null);
                 // we don't want to fail the tool if telemetry fails.
                 Debug.Fail(e.ToString());
             }

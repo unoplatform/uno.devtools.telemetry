@@ -4,13 +4,16 @@
 		<Nullable>enable</Nullable>
 		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
 		<GenerateSBOM>true</GenerateSBOM>
-		<NoWarn>$(NoWarn);NU1507</NoWarn>
+		<NoWarn>$(NoWarn);NU1507;NU5030</NoWarn>
 		
 		<Deterministic>true</Deterministic>
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<IncludeSymbols>true</IncludeSymbols>
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+		<Authors>Uno Platform</Authors>
+		<Copyright>Copyright (c) Uno Platform 2015-$([System.DateTime]::Now.ToString(`yyyy`))</Copyright>
 	</PropertyGroup>
 	
 	<PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">

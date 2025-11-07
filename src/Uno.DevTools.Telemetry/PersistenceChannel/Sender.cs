@@ -19,7 +19,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 	/// <summary>
 	///     Fetch transmissions from the storage and sends it.
 	/// </summary>
-	internal class Sender : IDisposable
+	internal sealed class Sender : IDisposable
 	{
 		/// <summary>
 		///     The default sending interval.
@@ -29,7 +29,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// <summary>
 		///     A wait handle that flags the sender when to start sending again. The type is protected for unit test.
 		/// </summary>
-		protected readonly AutoResetEvent DelayHandler;
+		private readonly AutoResetEvent DelayHandler;
 
 		/// <summary>
 		///     Holds the maximum time for the exponential back-off algorithm. The sending interval will grow on every HTTP
@@ -63,7 +63,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		///     A boolean value that indicates if the sender should be stopped. The sender's while loop is checking this boolean
 		///     value.
 		/// </summary>
-		private bool _stopped;
+		private int _stopped;
 
 		/// <summary>
 		///     The transmissions storage.
@@ -90,7 +90,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </param>
 		internal Sender(BaseStorageService storage, PersistenceTransmitter transmitter, bool startSending = true)
 		{
-			_stopped = false;
+			_stopped = 0;
 			DelayHandler = new AutoResetEvent(false);
 			_stoppedHandler = new AutoResetEvent(false);
 			_drainingTimeout = TimeSpan.FromSeconds(100);
@@ -149,7 +149,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			// After delayHandler is set, a sending iteration will immediately start. 
 			// Setting <c>stopped</c> to true, will cause the iteration to skip the actual sending and stop immediately. 
-			_stopped = true;
+			Interlocked.Exchange(ref _stopped, 1);
 			DelayHandler.Set();
 
 			// if delayHandler was set while a transmission was being sent, the return task will wait for it to finish, for an additional second,
@@ -169,17 +169,17 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// <summary>
 		///     Send transmissions in a loop.
 		/// </summary>
-		protected void SendLoop()
+		private void SendLoop()
 		{
-			TimeSpan prevSendingInterval = TimeSpan.Zero;
-			TimeSpan sendingInterval = _sendingIntervalOnNoData;
+			var prevSendingInterval = TimeSpan.Zero;
+			var sendingInterval = _sendingIntervalOnNoData;
 			try
 			{
-				while (!_stopped)
+				while (Interlocked.CompareExchange(ref _stopped, 0, 0) == 0)
 				{
-					using (StorageTransmission? transmission = _storage.Peek())
+					using (var transmission = _storage.Peek())
 					{
-						if (_stopped)
+						if (Interlocked.CompareExchange(ref _stopped, 0, 0) != 0)
 						{
 							// This second verification is required for cases where 'stopped' was set while peek was happening. 
 							// Once the actual sending starts the design is to wait until it finishes and deletes the transmission. 
@@ -190,7 +190,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 						// If there is a transmission to send - send it. 
 						if (transmission != null)
 						{
-							bool shouldRetry = Send(transmission, ref sendingInterval);
+							var shouldRetry = Send(transmission, ref sendingInterval);
 							if (!shouldRetry)
 							{
 								// If retry is not required - delete the transmission.
@@ -224,13 +224,13 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		///     iteration.
 		/// </param>
 		/// <returns>True, if there was sent error and we need to retry sending, otherwise false.</returns>
-		protected virtual bool Send(StorageTransmission transmission, ref TimeSpan nextSendInterval)
+		private bool Send(StorageTransmission transmission, ref TimeSpan nextSendInterval)
 		{
 			try
 			{
 				if (transmission != null)
 				{
-					bool isConnected = NetworkInterface.GetIsNetworkAvailable();
+					var isConnected = NetworkInterface.GetIsNetworkAvailable();
 
 					// there is no internet connection available, return than.
 					if (!isConnected)
@@ -248,7 +248,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			}
 			catch (WebException e)
 			{
-				int? statusCode = GetStatusCode(e);
+				var statusCode = GetStatusCode(e);
 				nextSendInterval = CalculateNextInterval(statusCode, nextSendInterval, _maxIntervalBetweenRetries);
 				return IsRetryable(statusCode, e.Status);
 			}
@@ -337,7 +337,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				return TimeSpan.FromSeconds(1);
 			}
 
-			double nextIntervalInSeconds = Math.Min(currentSendInterval.TotalSeconds * 2, maxInterval.TotalSeconds);
+			var nextIntervalInSeconds = Math.Min(currentSendInterval.TotalSeconds * 2, maxInterval.TotalSeconds);
 
 			return TimeSpan.FromSeconds(nextIntervalInSeconds);
 		}

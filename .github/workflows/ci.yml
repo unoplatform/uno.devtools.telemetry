@@ -18,7 +18,7 @@ jobs:
     runs-on: windows-2022
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
@@ -38,6 +38,30 @@ jobs:
         name: NuGet
         path: .\artifacts
 
+    - name: Create Test Results Directory
+      shell: pwsh
+      run: New-Item -ItemType Directory -Force -Path artifacts/test-results
+
+    - name: Test
+      shell: pwsh
+      run: |
+        cd src
+        dotnet run --project Uno.DevTools.Telemetry.Tests/Uno.DevTools.Telemetry.Tests.csproj --configuration Release -- --report-trx --results-directory ../artifacts/test-results
+
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: artifacts/test-results/*.trx
+
+    - name: Publish Test Results
+      uses: dorny/test-reporter@v2
+      if: always()
+      with:
+        name: Unit Tests
+        path: artifacts/test-results/*.trx
+        reporter: dotnet-trx
+
   sign:
     name: Sign Package
     if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) }}
@@ -51,7 +75,7 @@ jobs:
       - build
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Download Artifacts
         uses: actions/download-artifact@v4
@@ -60,14 +84,14 @@ jobs:
           path: artifacts\NuGet
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
       - name: Setup SignClient
         run: dotnet tool install --tool-path . sign --version 0.9.1-beta.25278.1
 
-      # Login to Azure using a ServicePrincipal configured to authenticate agaist a GitHub Action
+      # Login to Azure using a ServicePrincipal configured to authenticate against a GitHub Action
       - name: 'Az CLI login'
         uses: azure/login@v1
         with:
@@ -83,8 +107,8 @@ jobs:
           ./sign code azure-key-vault
           artifacts\NuGet\*.nupkg
           --publisher-name "Uno.Devtools.Telemetry"
-          --description "Uno.Devtools.Telemetryk"
           --description-url "https://github.com/${{ env.GITHUB_REPOSITORY }}"
+          --description "Uno.Devtools.Telemetry"
           --azure-key-vault-managed-identity true
           --azure-key-vault-url "${{ secrets.SIGN_KEY_VAULT_URL }}"
           --azure-key-vault-certificate "${{ secrets.SIGN_KEY_VAULT_CERTIFICATE_ID }}"

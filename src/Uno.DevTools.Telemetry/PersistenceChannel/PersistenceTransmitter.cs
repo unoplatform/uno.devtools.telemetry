@@ -17,7 +17,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 	/// <summary>
 	///     Implements throttled and persisted transmission of telemetry to Application Insights.
 	/// </summary>
-	internal class PersistenceTransmitter : IDisposable
+	internal sealed class PersistenceTransmitter : IDisposable
 	{
 		/// <summary>
 		///     The number of times this object was disposed.
@@ -48,7 +48,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			_storage = storage;
 			if (createSenders)
 			{
-				for (int i = 0; i < sendersCount; i++)
+				for (var i = 0; i < sendersCount; i++)
 				{
 					_senders.Add(new Sender(_storage, this));
 				}
@@ -82,8 +82,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				return;
 			}
 
-			List<Task> stoppedTasks = new List<Task>();
-			foreach (Sender sender in _senders)
+			var stoppedTasks = new List<Task>();
+			foreach (var sender in _senders)
 			{
 				stoppedTasks.Add(sender.StopAsync());
 			}

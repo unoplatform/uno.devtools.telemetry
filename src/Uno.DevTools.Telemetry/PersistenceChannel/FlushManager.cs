@@ -17,7 +17,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 	/// <summary>
 	///     This class handles all the logic for flushing the In Memory buffer to the persistent storage.
 	/// </summary>
-	internal class FlushManager
+	internal sealed class FlushManager
 	{
 		/// <summary>
 		///     The storage that is used to persist all the transmissions.
@@ -50,8 +50,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			if (telemetryItem != null)
 			{
-				byte[] data = JsonSerializer.Serialize(new[] { telemetryItem });
-				Transmission transmission = new Transmission(
+				var data = JsonSerializer.Serialize(new[] { telemetryItem });
+				var transmission = new Transmission(
 					EndpointAddress,
 					data,
 					"application/x-json-stream",

@@ -72,16 +72,7 @@ public static class TelemetryServiceCollectionExtensions
 
     private class TelemetryGenericFactory<T> : ITelemetry<T>
     {
-        private readonly ITelemetry<T> _inner;
-
-        public TelemetryGenericFactory(IServiceProvider services)
-        {
-            if (services == null)
-            {
-                throw new ArgumentNullException(nameof(services));
-            }
-            _inner = TelemetryFactory.Create<T>();
-        }
+        private readonly ITelemetry<T> _inner = TelemetryFactory.Create<T>();
 
         public bool Enabled => _inner.Enabled;
         public void Dispose() => _inner.Dispose();

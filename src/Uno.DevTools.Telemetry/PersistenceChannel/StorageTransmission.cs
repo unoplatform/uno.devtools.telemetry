@@ -46,7 +46,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// <returns>Return transmission loaded from file; return null if the file is corrupted.</returns>
 		internal static async Task<StorageTransmission> CreateFromStreamAsync(Stream stream, string fileName)
 		{
-			var reader = new StreamReader(stream);
+			using var reader = new StreamReader(stream);
 			var address = await ReadAddressAsync(reader).ConfigureAwait(false);
 			var contentType = await ReadHeaderAsync(reader, "Content-Type").ConfigureAwait(false);
 			var contentEncoding = await ReadHeaderAsync(reader, "Content-Encoding").ConfigureAwait(false);
@@ -59,7 +59,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		internal static async Task SaveAsync(Transmission transmission, Stream stream)
 		{
-			var writer = new StreamWriter(stream);
+			using var writer = new StreamWriter(stream);
 			try
 			{
 				await writer.WriteLineAsync(transmission.EndpointAddress.ToString()).ConfigureAwait(false);

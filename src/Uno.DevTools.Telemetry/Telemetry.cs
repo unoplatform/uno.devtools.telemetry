@@ -25,10 +25,6 @@ namespace Uno.DevTools.Telemetry
         private Dictionary<string, double>? _commonMeasurements;
         private TelemetryConfiguration? _telemetryConfig;
         private Task? _trackEventTask;
-        // _trackEventTask is updated using a lock-free CAS loop (see TrackEvent)
-        // to ensure that all telemetry events are chained in order, even under heavy concurrency.
-        // This avoids the need for a global lock and guarantees that no events are lost or overwritten.
-        private readonly object _trackEventTaskLock = new();
         private string? _storageDirectoryPath;
         private string? _settingsStorageDirectoryPath;
         private PersistenceChannel.PersistenceChannel? _persistenceChannel;

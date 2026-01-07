@@ -7,7 +7,28 @@ namespace Uno.DevTools.Telemetry.Tests
     [TestClass]
     public class FileTelemetryTests
     {
-        private string GetTempFilePath() => Path.Combine(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
+        private readonly List<string> _filesToCleanup = new List<string>();
+
+        private string GetTempFilePath()
+        {
+            var filePath = Path.Combine(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
+            _filesToCleanup.Add(filePath);
+            return filePath;
+        }
+
+        [TestCleanup]
+        public void Cleanup()
+        {
+            foreach (var filePath in _filesToCleanup)
+            {
+                if (File.Exists(filePath))
+                {
+                    File.Delete(filePath);
+                }
+            }
+
+            _filesToCleanup.Clear();
+        }
 
         [TestMethod]
         public void Given_FileTelemetry_When_TrackEvent_Then_WritesToFile()
@@ -62,7 +83,7 @@ namespace Uno.DevTools.Telemetry.Tests
             var totalEvents = threadCount * eventsPerThread;
             var threads = new List<Thread>();
             var exceptions = new List<Exception>();
-            var startEvent = new ManualResetEventSlim(false);
+            using var startEvent = new ManualResetEventSlim(false);
 
             for (var t = 0; t < threadCount; t++)
             {

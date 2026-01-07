@@ -312,7 +312,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				PersistenceChannelDebugLog.WriteException(e, "Failed to get transmission age");
 			}
 			
-			return TimeSpan.Zero;
+			// Use TimeSpan.MaxValue as a sentinel for unknown age so callers treat it as expired
+			return TimeSpan.MaxValue;
 		}
 
 		/// <summary>

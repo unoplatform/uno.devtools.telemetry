@@ -284,9 +284,6 @@ namespace Uno.DevTools.Telemetry.Tests
 			Thread.Sleep(2000);
 
 			// Assert - The sender should still be running despite any exceptions
-			// We can verify this by checking that transmissions are being processed
-			var remainingFiles = Directory.GetFiles(storageDir, "*.trn");
-			
 			// Even if some failed, the loop should continue processing
 			// We're not asserting a specific count because network availability affects this
 			// The key is that no exception crashed the process

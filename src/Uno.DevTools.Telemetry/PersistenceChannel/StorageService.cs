@@ -198,6 +198,10 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 				var filePath = Path.Combine(StorageFolder, item.FileName);
 				
+				// Get file size before checking existence to avoid TOCTOU race condition
+				// If file doesn't exist, GetSize returns 0 which is handled correctly
+				var fileSize = GetSize(item.FileName);
+				
 				// Check if file exists before attempting operations
 				// This prevents UnauthorizedAccessException when file doesn't exist
 				// (race condition: Delete called before file created, or file already deleted)
@@ -209,8 +213,6 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 							item.FileName));
 					return;
 				}
-
-				var fileSize = GetSize(item.FileName);
 				
 				// Retry Delete operation for transient failures (concurrent access from other processes)
 				// This handles cases where multiple instances access the same storage folder
@@ -572,6 +574,13 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				
 				if (File.Exists(sourcePath))
 				{
+					// Delete existing .corrupt file if present (from previous failure)
+					// This handles the case where RenameToCorrupted is called multiple times
+					if (File.Exists(corruptedPath))
+					{
+						File.Delete(corruptedPath);
+					}
+					
 					File.Move(sourcePath, corruptedPath);
 					PersistenceChannelDebugLog.WriteLine(
 						string.Format(CultureInfo.InvariantCulture,

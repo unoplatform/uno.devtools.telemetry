@@ -11,6 +11,5 @@
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Update="Microsoft.Testing.Extensions.TrxReport" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 </Project>

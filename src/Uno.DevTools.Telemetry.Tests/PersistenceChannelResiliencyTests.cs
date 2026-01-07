@@ -10,6 +10,12 @@ using Microsoft.ApplicationInsights.Extensibility.Implementation;
 
 namespace Uno.DevTools.Telemetry.Tests
 {
+	/// <summary>
+	///     Integration tests for telemetry resilience.
+	///     Note: These tests use Thread.Sleep to wait for background operations (DeleteObsoleteFiles, SendLoop).
+	///     While not ideal, this is acceptable for integration tests that verify real async behavior.
+	///     Future improvement: Use TimeProvider for deterministic time control.
+	/// </summary>
 	[TestClass]
 	public class PersistenceChannelResiliencyTests
 	{

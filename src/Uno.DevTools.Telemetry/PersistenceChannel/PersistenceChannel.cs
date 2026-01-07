@@ -87,7 +87,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 			set
 			{
-				string address = value ?? TelemetryServiceEndpoint;
+				var address = value ?? TelemetryServiceEndpoint;
 				_flushManager.EndpointAddress = new Uri(address);
 			}
 		}

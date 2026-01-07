@@ -1,7 +1,4 @@
-# Uno Platform Developer tools for Telemetry
+# Uno.DevTools.Telemetry
 
-Learn how to [get started with Uno Platform](https://aka.platform.uno/get-started).
-
-This repository contains the telemetry source used through Uno Platform's developer tools, derived from the existing `dotnet.exe` telemetry.
-
-The package generated from this repository is not integrated into end-user apps, and should be not be referenced directly.
+This repository contains telemetry infrastructure used by Uno Platform developer tools.
+The package is intended for internal tooling scenarios and is not meant for end-user application usage.

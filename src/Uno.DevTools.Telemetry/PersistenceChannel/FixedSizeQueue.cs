@@ -15,7 +15,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 	///     A light fixed size queue. If Enqueue is called and queue's limit has reached the last item will be removed.
 	///     This data structure is thread safe.
 	/// </summary>
-	internal class FixedSizeQueue<T>
+	internal sealed class FixedSizeQueue<T>
 	{
 		private readonly int _maxSize;
 		private readonly Queue<T> _queue = new Queue<T>();

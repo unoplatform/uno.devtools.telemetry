@@ -15,19 +15,21 @@ using System.Reflection;
 
 namespace Uno.DevTools.Telemetry
 {
-    public class Telemetry : ITelemetry
+    public sealed class Telemetry : ITelemetry
     {
-        private string? _currentSessionId;
+        private readonly string? _currentSessionId;
         private TelemetryClient? _client;
-        private Dictionary<string, string>? _commonProperties;
-        private Dictionary<string, double>? _commonMeasurements;
+        // These collections must be treated as immutable after construction.
+        // Do not mutate after initialization to avoid race conditions in concurrent scenarios.
+        private IReadOnlyDictionary<string, string>? _commonProperties;
+        private IReadOnlyDictionary<string, double>? _commonMeasurements;
         private TelemetryConfiguration? _telemetryConfig;
         private Task? _trackEventTask;
         private string? _storageDirectoryPath;
         private string? _settingsStorageDirectoryPath;
         private PersistenceChannel.PersistenceChannel? _persistenceChannel;
-        private string _instrumentationKey;
-        private string _eventNamePrefix;
+        private readonly string _instrumentationKey;
+        private readonly string _eventNamePrefix;
         private readonly Assembly _versionAssembly;
         private readonly string? _productName;
         private readonly Func<string>? _currentDirectoryProvider;
@@ -40,11 +42,12 @@ namespace Uno.DevTools.Telemetry
         /// Initializes a new instance of the <see cref="Telemetry"/> class.
         /// </summary>
         /// <param name="instrumentationKey">The App Insights Key</param>
+        /// <param name="eventNamePrefix">A prefix that will be used on all events through this telemetry instance</param>
+        /// <param name="versionAssembly">The assembly to use to get the version to report in telemetry</param>
+        /// <param name="sessionId">Defines the session ID for this instance</param>
+        /// <param name="blockThreadInitialization">Block the execution of the constructor until the telemetry is initialized</param>
         /// <param name="enabledProvider">A delegate that can determine if the telemetry is enabled</param>
         /// <param name="currentDirectoryProvider">A delegate that can provide the value to be hashed in the "Current Path Hash" custom dimension </param>
-        /// <param name="blockThreadInitialization">Block the execution of the constructor until the telemetry is initialized</param>
-        /// <param name="sessionId">Defines the session ID for this instance</param>
-        /// <param name="versionAssembly">The assembly to use to get the version to report in telemetry</param>
         /// <param name="productName">The product name to use in the common properties. If null, versionAssembly.Name is used instead.</param>
         public Telemetry(
             string instrumentationKey,
@@ -85,7 +88,7 @@ namespace Uno.DevTools.Telemetry
             else
             {
                 //initialize in task to offload to parallel thread
-                _trackEventTask = Task.Run(() => InitializeTelemetry());
+                _trackEventTask = Task.Run(InitializeTelemetry);
             }
         }
 
@@ -103,10 +106,25 @@ namespace Uno.DevTools.Telemetry
                 return;
             }
 
-            //continue the task in different threads
-            _trackEventTask = _trackEventTask.ContinueWith(
-                x => TrackEventTask(eventName, properties, measurements)
-            );
+            // Lock-free chaining of telemetry events:
+            // 1. Read the current task (originalTask)
+            // 2. Create a continuation that will send the new event after originalTask
+            // 3. Atomically swap _trackEventTask to the new continuation only if it still matches originalTask
+            // 4. If another thread changed it, retry with the new value
+            // This ensures all events are sent in order, even with concurrent calls.
+            while (true)
+            {
+                var originalTask = _trackEventTask;
+                var continuation = originalTask.ContinueWith(
+                    x => TrackEventTask(eventName, properties, measurements)
+                );
+                var exchanged = Interlocked.CompareExchange(ref _trackEventTask, continuation, originalTask);
+                if (exchanged == originalTask)
+                {
+                    break;
+                }
+                Thread.Yield();
+            }
         }
 
         public void Flush()
@@ -116,10 +134,12 @@ namespace Uno.DevTools.Telemetry
                 return;
             }
 
-            // Skip the wait if the task has not yet been activated
-            if (_trackEventTask.Status != TaskStatus.WaitingForActivation)
+            // Wait for the current chain of telemetry events to complete.
+            // This reads the value atomically and does not block other threads from chaining new events.
+            var task = _trackEventTask;
+            if (task.Status != TaskStatus.WaitingForActivation)
             {
-                _trackEventTask.Wait(TimeSpan.FromSeconds(1));
+                task.Wait(TimeSpan.FromSeconds(1));
             }
         }
 
@@ -130,9 +150,11 @@ namespace Uno.DevTools.Telemetry
                 return;
             }
 
-            if (!_trackEventTask.IsCompleted)
+            // Wait asynchronously for the current chain of telemetry events to complete.
+            var task = _trackEventTask;
+            if (!task.IsCompleted)
             {
-                await Task.WhenAny(_trackEventTask, Task.Delay(-1, ct));
+                await Task.WhenAny(task, Task.Delay(-1, ct));
             }
         }
 
@@ -236,9 +258,10 @@ namespace Uno.DevTools.Telemetry
             return _eventNamePrefix + "/" + eventName;
         }
 
-        private Dictionary<string, double> GetEventMeasures(IDictionary<string, double>? measurements)
+        private IDictionary<string, double> GetEventMeasures(IDictionary<string, double>? measurements)
         {
-            var eventMeasurements = new Dictionary<string, double>(_commonMeasurements ?? []);
+            var eventMeasurements = new Dictionary<string, double>(_commonMeasurements?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                ?? new Dictionary<string, double>(0));
             if (measurements != null)
             {
                 foreach (var measurement in measurements)
@@ -249,21 +272,23 @@ namespace Uno.DevTools.Telemetry
             return eventMeasurements;
         }
 
-        private Dictionary<string, string>? GetEventProperties(IDictionary<string, string>? properties)
+        private IDictionary<string, string>? GetEventProperties(IDictionary<string, string>? properties)
         {
-            if (properties != null)
+            if (properties == null)
             {
-                var eventProperties = new Dictionary<string, string>(_commonProperties ?? []);
-                foreach (var property in properties)
-                {
-                    eventProperties[property.Key] = property.Value;
-                }
-                return eventProperties;
+                return _commonProperties is IDictionary<string, string> commonProperties
+                    ? commonProperties
+                    : new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                        ?? new Dictionary<string, string>(0));
             }
-            else
+
+            var eventProperties = new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                ?? new Dictionary<string, string>(0));
+            foreach (var property in properties)
             {
-                return _commonProperties;
+                eventProperties[property.Key] = property.Value;
             }
+            return eventProperties;
         }
     }
 }

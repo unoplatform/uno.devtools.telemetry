@@ -18,6 +18,9 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 	{
 		/// <summary>
 		///     Peeked transmissions dictionary (maps file name to its full path). Holds all the transmissions that were peeked.
+		///     
+		///     IMPORTANT: Internal collections must never be exposed directly. All access and mutation must go through thread-safe abstractions
+		///     (e.g., SnapshottingDictionary which implements IDictionary and provides snapshotting semantics).
 		/// </summary>
 		/// <remarks>
 		///     Note: The value (=file's full path) is not required in the Storage implementation.

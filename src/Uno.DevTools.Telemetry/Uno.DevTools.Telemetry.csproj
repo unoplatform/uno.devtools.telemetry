@@ -6,28 +6,33 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<PackageId>Uno.DevTools.Telemetry</PackageId>
-		<PackageVersion>0.1.0-dev.1</PackageVersion>
-		<Authors>Uno Platform</Authors>
-		<Copyright>Copyright (c) Uno Platform 2015-$([System.DateTime]::Now.ToString(`yyyy`))</Copyright>
 		<Description>A development-time dependency for telemetry</Description>
 		<DevelopmentDependency>true</DevelopmentDependency>
+	</PropertyGroup>
+
+	<PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+		<PackageId>Uno.DevTools.Telemetry</PackageId>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-		
+		<PackageLicenseFile>LICENSE.md</PackageLicenseFile>
 	</PropertyGroup>
 	
 	<PropertyGroup Condition=" '$(TargetFramework)' == 'netstandard2.0' ">
 		<SignAssembly>True</SignAssembly>
 		<AssemblyOriginatorKeyFile>sn.snk</AssemblyOriginatorKeyFile>
 	</PropertyGroup>
-	
+
 	<ItemGroup>
 		<PackageReference Include="Microsoft.ApplicationInsights" />
 		<PackageReference Include="Microsoft.DotNet.PlatformAbstractions" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
 		<PackageReference Include="PolySharp">
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
+	</ItemGroup>
+	
+	<ItemGroup Condition=" '$(TargetFramework)' == 'netstandard2.0' ">
+		<PackageReference Include="System.Text.Json" />
 	</ItemGroup>
 	
 </Project>

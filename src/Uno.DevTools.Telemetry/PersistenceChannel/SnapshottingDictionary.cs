@@ -55,7 +55,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			lock (Collection)
 			{
-				bool removed = Collection.Remove(key);
+				var removed = Collection.Remove(key);
 				if (removed)
 				{
 					snapshot = null;

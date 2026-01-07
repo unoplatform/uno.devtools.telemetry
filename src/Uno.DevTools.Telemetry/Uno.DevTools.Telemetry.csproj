@@ -4,6 +4,10 @@
 		<TargetFrameworks>netstandard2.0;net8.0;net9.0</TargetFrameworks>
 		<LangVersion>latest</LangVersion>
 	</PropertyGroup>
+	
+	<ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.0'">
+		<InternalsVisibleTo Include="Uno.DevTools.Telemetry.Tests" />
+	</ItemGroup>
 
 	<PropertyGroup>
 		<Description>A development-time dependency for telemetry</Description>

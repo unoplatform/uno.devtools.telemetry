@@ -64,9 +64,12 @@ public static class TelemetryServiceCollectionExtensions
     /// <summary>
     /// Registers ITelemetry<T> for all T in the DI container, using assembly-level configuration.
     /// </summary>
+    /// <remarks>
+    /// This overload requires the assembly-level <see cref="TelemetryAttribute"/> to be defined for each type being resolved.
+    /// </remarks>
     public static IServiceCollection AddTelemetry(this IServiceCollection services)
     {
-        services.AddTransient(typeof(ITelemetry<>), typeof(TelemetryGenericFactory<>));
+        services.AddSingleton(typeof(ITelemetry<>), typeof(TelemetryGenericFactory<>));
         return services;
     }
 

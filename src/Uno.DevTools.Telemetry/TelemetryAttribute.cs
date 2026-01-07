@@ -23,7 +23,7 @@ public sealed class TelemetryAttribute(string instrumentationKey) : Attribute
 
     /// <summary>
     /// Gets or sets the prefix to apply to all event names generated from this assembly.
-    /// If not specified, a default prefix based on the assembly name will be used.
+    /// If not specified, no prefix will be applied to event names.
     /// </summary>
     public string? EventsPrefix { get; set; } = string.Empty;
 }

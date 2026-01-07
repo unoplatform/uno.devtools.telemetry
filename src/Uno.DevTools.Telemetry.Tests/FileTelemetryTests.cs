@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 
 namespace Uno.DevTools.Telemetry.Tests
@@ -19,12 +20,9 @@ namespace Uno.DevTools.Telemetry.Tests
         [TestCleanup]
         public void Cleanup()
         {
-            foreach (var filePath in _filesToCleanup)
+            foreach (var filePath in _filesToCleanup.Where(File.Exists))
             {
-                if (File.Exists(filePath))
-                {
-                    File.Delete(filePath);
-                }
+                File.Delete(filePath);
             }
 
             _filesToCleanup.Clear();

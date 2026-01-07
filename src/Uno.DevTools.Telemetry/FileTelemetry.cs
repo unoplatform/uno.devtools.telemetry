@@ -91,21 +91,23 @@ namespace Uno.DevTools.Telemetry
 
         public void TrackEvent(string eventName, (string key, string value)[]? properties, (string key, double value)[]? measurements)
         {
-            var propertiesDict = properties != null ? new Dictionary<string, string>() : null;
+            Dictionary<string, string>? propertiesDict = null;
             if (properties != null)
             {
+                propertiesDict = new Dictionary<string, string>(properties.Length);
                 foreach (var (key, value) in properties)
                 {
-                    propertiesDict![key] = value;
+                    propertiesDict[key] = value;
                 }
             }
 
-            var measurementsDict = measurements != null ? new Dictionary<string, double>() : null;
+            Dictionary<string, double>? measurementsDict = null;
             if (measurements != null)
             {
+                measurementsDict = new Dictionary<string, double>(measurements.Length);
                 foreach (var (key, value) in measurements)
                 {
-                    measurementsDict![key] = value;
+                    measurementsDict[key] = value;
                 }
             }
 

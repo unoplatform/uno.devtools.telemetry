@@ -2,8 +2,9 @@
 
 namespace Uno.DevTools.Telemetry.Tests;
 
-[TestClass]
-public class TelemetryGenericDiTests
+    [TestClass]
+    [DoNotParallelize]
+    public class TelemetryGenericDiTests
 {
     public class MyContext {}
 

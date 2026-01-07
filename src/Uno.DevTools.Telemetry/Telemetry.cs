@@ -21,8 +21,8 @@ namespace Uno.DevTools.Telemetry
         private TelemetryClient? _client;
         // These collections must be treated as immutable after construction.
         // Do not mutate after initialization to avoid race conditions in concurrent scenarios.
-        private Dictionary<string, string>? _commonProperties;
-        private Dictionary<string, double>? _commonMeasurements;
+        private IReadOnlyDictionary<string, string>? _commonProperties;
+        private IReadOnlyDictionary<string, double>? _commonMeasurements;
         private TelemetryConfiguration? _telemetryConfig;
         private Task? _trackEventTask;
         private string? _storageDirectoryPath;
@@ -123,6 +123,7 @@ namespace Uno.DevTools.Telemetry
                 {
                     break;
                 }
+                Thread.Yield();
             }
         }
 
@@ -257,9 +258,10 @@ namespace Uno.DevTools.Telemetry
             return _eventNamePrefix + "/" + eventName;
         }
 
-        private Dictionary<string, double> GetEventMeasures(IDictionary<string, double>? measurements)
+        private IDictionary<string, double> GetEventMeasures(IDictionary<string, double>? measurements)
         {
-            var eventMeasurements = new Dictionary<string, double>(_commonMeasurements ?? []);
+            var eventMeasurements = new Dictionary<string, double>(_commonMeasurements?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                ?? new Dictionary<string, double>(0));
             if (measurements != null)
             {
                 foreach (var measurement in measurements)
@@ -270,14 +272,18 @@ namespace Uno.DevTools.Telemetry
             return eventMeasurements;
         }
 
-        private Dictionary<string, string>? GetEventProperties(IDictionary<string, string>? properties)
+        private IDictionary<string, string>? GetEventProperties(IDictionary<string, string>? properties)
         {
             if (properties == null)
             {
-                return _commonProperties;
+                return _commonProperties is IDictionary<string, string> commonProperties
+                    ? commonProperties
+                    : new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                        ?? new Dictionary<string, string>(0));
             }
 
-            var eventProperties = new Dictionary<string, string>(_commonProperties ?? []);
+            var eventProperties = new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                ?? new Dictionary<string, string>(0));
             foreach (var property in properties)
             {
                 eventProperties[property.Key] = property.Value;

@@ -241,8 +241,6 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			const int maxRetries = 3;
 			
-			Exception? lastException = null;
-			
 			for (int attempt = 0; attempt < maxRetries; attempt++)
 			{
 				try
@@ -256,26 +254,19 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					File.Delete(filePath);
 					return; // Success
 				}
-				catch (IOException ex)
+				catch (IOException) when (attempt < maxRetries - 1)
 				{
 					// IOException can occur with concurrent access (file in use by another process)
 					// Retry immediately - delays aren't needed for typical file lock scenarios
 					// and Thread.Sleep is not supported in WebAssembly
-					lastException = ex;
 				}
-				catch (UnauthorizedAccessException ex)
+				catch (UnauthorizedAccessException) when (attempt < maxRetries - 1)
 				{
 					// Can occur with concurrent access or permission issues
 					// Retry immediately - delays aren't needed for typical file lock scenarios
 					// and Thread.Sleep is not supported in WebAssembly
-					lastException = ex;
 				}
-			}
-			
-			// All retries exhausted, throw the last exception to be caught by outer catch
-			if (lastException != null)
-			{
-				throw lastException;
+				// On last attempt (attempt == maxRetries - 1), exceptions will propagate naturally
 			}
 		}
 

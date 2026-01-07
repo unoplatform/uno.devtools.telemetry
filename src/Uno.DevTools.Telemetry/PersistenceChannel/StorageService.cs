@@ -21,6 +21,22 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 	internal sealed class StorageService : BaseStorageService
 	{
 		private const string DefaultStorageFolderName = "TelemetryStorageService";
+		
+		/// <summary>
+		///     TTL for .trn files: 30 days. After this period, files are deleted even if not sent.
+		/// </summary>
+		internal static readonly TimeSpan TransmissionFileTtl = TimeSpan.FromDays(30);
+		
+		/// <summary>
+		///     TTL for .corrupt files: 7 days. Corrupted files are kept for diagnostics then removed.
+		/// </summary>
+		internal static readonly TimeSpan CorruptedFileTtl = TimeSpan.FromDays(7);
+		
+		/// <summary>
+		///     Maximum retry duration: 2 hours. After this period, failed transmissions are dropped.
+		/// </summary>
+		internal static readonly TimeSpan MaxRetryDuration = TimeSpan.FromHours(2);
+		
 		private readonly FixedSizeQueue<string> _deletedFilesQueue = new FixedSizeQueue<string>(10);
 
 		private readonly object _peekLockObj = new object();
@@ -152,6 +168,9 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 								e,
 								"Failed to load an item from the storage. file: {0}",
 								file);
+							
+							// Quarantine corrupted files by renaming to .corrupt
+							RenameToCorrupted(file);
 						}
 					}
 				}
@@ -181,8 +200,10 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				Interlocked.Add(ref _storageSize, -fileSize);
 				Interlocked.Decrement(ref _storageCountFiles);
 			}
-			catch (IOException e)
+			catch (Exception e)
 			{
+				// Catch all exceptions including IOException, UnauthorizedAccessException, etc.
+				// Telemetry operations must never crash the host app.
 				PersistenceChannelDebugLog.WriteException(e, "Failed to delete a file. file: {0}", item == null ? "null" : item.FullFilePath);
 			}
 		}
@@ -323,17 +344,23 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		private long GetSize(string file)
 		{
-            if (StorageFolder is not null)
-            {
-                using (var stream = File.OpenRead(Path.Combine(StorageFolder, file)))
+			try
+			{
+				if (StorageFolder is not null)
 				{
-					return stream.Length;
+					using (var stream = File.OpenRead(Path.Combine(StorageFolder, file)))
+					{
+						return stream.Length;
+					}
 				}
 			}
-			else
+			catch (Exception e)
 			{
-				return 0;
+				// Guard against IO exceptions during size calculation
+				PersistenceChannelDebugLog.WriteException(e, "Failed to get file size. file: {0}", file);
 			}
+			
+			return 0;
 		}
 
 		/// <summary>
@@ -342,19 +369,27 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		private void CalculateSize()
 		{
-            if (StorageFolder is not null)
-            {
-                var storageFiles = Directory.GetFiles(StorageFolder, "*.*");
-
-				_storageCountFiles = storageFiles.Length;
-
-				long storageSizeInBytes = 0;
-				foreach (var file in storageFiles)
+			try
+			{
+				if (StorageFolder is not null)
 				{
-					storageSizeInBytes += GetSize(file);
-				}
+					var storageFiles = Directory.GetFiles(StorageFolder, "*.*");
 
-				_storageSize = storageSizeInBytes;
+					_storageCountFiles = storageFiles.Length;
+
+					long storageSizeInBytes = 0;
+					foreach (var file in storageFiles)
+					{
+						storageSizeInBytes += GetSize(file);
+					}
+
+					_storageSize = storageSizeInBytes;
+				}
+			}
+			catch (Exception e)
+			{
+				// Guard against exceptions during size calculation
+				PersistenceChannelDebugLog.WriteException(e, "Failed to calculate storage size");
 			}
 		}
 
@@ -364,7 +399,10 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		///     A file without a <c>trn</c> extension is ignored by Storage.Peek(), so if a process is taken down before rename
 		///     happens
 		///     it will stay on the disk forever.
-		///     This thread deletes files with the <c>tmp</c> extension that exists on disk for more than 5 minutes.
+		///     This method deletes:
+		///     - tmp files older than 5 minutes
+		///     - trn files older than TransmissionFileTtl (30 days)
+		///     - corrupt files older than CorruptedFileTtl (7 days)
 		/// </summary>
 		private void DeleteObsoleteFiles()
 		{
@@ -372,21 +410,96 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				if (StorageFolder is not null)
 				{
-					var files = GetFiles("*.tmp", 50);
-					foreach (var file in files)
+					// Delete old tmp files (5 minutes)
+					var tmpFiles = GetFiles("*.tmp", 50);
+					foreach (var file in tmpFiles)
 					{
-						var creationTime = File.GetCreationTimeUtc(Path.Combine(StorageFolder, file));
-						// if the file is older then 5 minutes - delete it.
-						if (DateTime.UtcNow - creationTime >= TimeSpan.FromMinutes(5))
+						try
 						{
-							File.Delete(Path.Combine(StorageFolder, file));
+							var creationTime = File.GetCreationTimeUtc(Path.Combine(StorageFolder, file));
+							if (DateTime.UtcNow - creationTime >= TimeSpan.FromMinutes(5))
+							{
+								File.Delete(Path.Combine(StorageFolder, file));
+							}
+						}
+						catch (Exception e)
+						{
+							PersistenceChannelDebugLog.WriteException(e, "Failed to delete tmp file: {0}", file);
+						}
+					}
+					
+					// Delete old trn files (30 days TTL)
+					var trnFiles = GetFiles("*.trn", 50);
+					foreach (var file in trnFiles)
+					{
+						try
+						{
+							var creationTime = File.GetCreationTimeUtc(Path.Combine(StorageFolder, file));
+							if (DateTime.UtcNow - creationTime >= TransmissionFileTtl)
+							{
+								File.Delete(Path.Combine(StorageFolder, file));
+							}
+						}
+						catch (Exception e)
+						{
+							PersistenceChannelDebugLog.WriteException(e, "Failed to delete old trn file: {0}", file);
+						}
+					}
+					
+					// Delete old corrupt files (7 days TTL)
+					var corruptFiles = GetFiles("*.corrupt", 50);
+					foreach (var file in corruptFiles)
+					{
+						try
+						{
+							var creationTime = File.GetCreationTimeUtc(Path.Combine(StorageFolder, file));
+							if (DateTime.UtcNow - creationTime >= CorruptedFileTtl)
+							{
+								File.Delete(Path.Combine(StorageFolder, file));
+							}
+						}
+						catch (Exception e)
+						{
+							PersistenceChannelDebugLog.WriteException(e, "Failed to delete old corrupt file: {0}", file);
 						}
 					}
 				}
 			}
 			catch (Exception e)
 			{
-				PersistenceChannelDebugLog.WriteException(e, "Failed to delete tmp files.");
+				PersistenceChannelDebugLog.WriteException(e, "Failed to delete obsolete files.");
+			}
+		}
+		
+		/// <summary>
+		///     Renames a corrupted .trn file to .corrupt for quarantine and diagnostics.
+		/// </summary>
+		private void RenameToCorrupted(string fileName)
+		{
+			try
+			{
+				if (StorageFolder is null || string.IsNullOrEmpty(fileName))
+				{
+					return;
+				}
+				
+				var sourcePath = Path.Combine(StorageFolder, fileName);
+				var corruptedPath = Path.ChangeExtension(sourcePath, "corrupt");
+				
+				if (File.Exists(sourcePath))
+				{
+					File.Move(sourcePath, corruptedPath);
+					PersistenceChannelDebugLog.WriteLine(
+						string.Format(CultureInfo.InvariantCulture,
+							"Renamed corrupted file: {0} -> {1}", 
+							fileName, 
+							Path.GetFileName(corruptedPath)));
+				}
+			}
+			catch (Exception e)
+			{
+				// Telemetry must never crash the host app
+				PersistenceChannelDebugLog.WriteException(e, "Failed to rename corrupted file: {0}", fileName);
 			}
 		}
 	}

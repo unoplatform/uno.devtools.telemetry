@@ -9,6 +9,7 @@
 
 using System;
 using System.Globalization;
+using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Threading;
@@ -177,30 +178,40 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				while (Interlocked.CompareExchange(ref _stopped, 0, 0) == 0)
 				{
-					using (var transmission = _storage.Peek())
+					try
 					{
-						if (Interlocked.CompareExchange(ref _stopped, 0, 0) != 0)
+						using (var transmission = _storage.Peek())
 						{
-							// This second verification is required for cases where 'stopped' was set while peek was happening. 
-							// Once the actual sending starts the design is to wait until it finishes and deletes the transmission. 
-							// So no extra validation is required.
-							break;
-						}
-
-						// If there is a transmission to send - send it. 
-						if (transmission != null)
-						{
-							var shouldRetry = Send(transmission, ref sendingInterval);
-							if (!shouldRetry)
+							if (Interlocked.CompareExchange(ref _stopped, 0, 0) != 0)
 							{
-								// If retry is not required - delete the transmission.
-								_storage.Delete(transmission);
+								// This second verification is required for cases where 'stopped' was set while peek was happening. 
+								// Once the actual sending starts the design is to wait until it finishes and deletes the transmission. 
+								// So no extra validation is required.
+								break;
+							}
+
+							// If there is a transmission to send - send it. 
+							if (transmission != null)
+							{
+								var shouldRetry = Send(transmission, ref sendingInterval);
+								if (!shouldRetry)
+								{
+									// If retry is not required - delete the transmission.
+									_storage.Delete(transmission);
+								}
+							}
+							else
+							{
+								sendingInterval = _sendingIntervalOnNoData;
 							}
 						}
-						else
-						{
-							sendingInterval = _sendingIntervalOnNoData;
-						}
+					}
+					catch (Exception e)
+					{
+						// Guard against any unexpected exceptions in the send loop
+						// Telemetry must never crash the host app
+						PersistenceChannelDebugLog.WriteException(e, "Unexpected exception in send loop");
+						sendingInterval = _sendingIntervalOnNoData; // Reset interval on error
 					}
 
 					LogInterval(prevSendingInterval, sendingInterval);
@@ -230,6 +241,18 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				if (transmission != null)
 				{
+					// Check if we've been retrying for more than MaxRetryDuration (2 hours)
+					var fileAge = GetTransmissionAge(transmission);
+					if (fileAge >= StorageService.MaxRetryDuration)
+					{
+						PersistenceChannelDebugLog.WriteLine(
+							string.Format(CultureInfo.InvariantCulture,
+								"Transmission has exceeded max retry duration ({0}). Dropping file: {1}",
+								StorageService.MaxRetryDuration,
+								transmission.FileName));
+						return false; // Drop the transmission
+					}
+					
 					var isConnected = NetworkInterface.GetIsNetworkAvailable();
 
 					// there is no internet connection available, return than.
@@ -254,11 +277,38 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			}
 			catch (Exception e)
 			{
+				// Treat unknown exceptions as potentially transient, but with bounded retry
 				nextSendInterval = CalculateNextInterval(null, nextSendInterval, _maxIntervalBetweenRetries);
 				PersistenceChannelDebugLog.WriteException(e, "Unknown exception during sending");
+				return true; // Retry unknown exceptions
 			}
 
 			return false;
+		}
+		
+		/// <summary>
+		///     Gets the age of a transmission based on the file creation time.
+		/// </summary>
+		private TimeSpan GetTransmissionAge(StorageTransmission transmission)
+		{
+			try
+			{
+				if (_storage.StorageDirectoryPath is not null && !string.IsNullOrEmpty(transmission.FileName))
+				{
+					var filePath = Path.Combine(_storage.StorageDirectoryPath, transmission.FileName);
+					if (File.Exists(filePath))
+					{
+						var creationTime = File.GetCreationTimeUtc(filePath);
+						return DateTime.UtcNow - creationTime;
+					}
+				}
+			}
+			catch (Exception e)
+			{
+				PersistenceChannelDebugLog.WriteException(e, "Failed to get transmission age");
+			}
+			
+			return TimeSpan.Zero;
 		}
 
 		/// <summary>

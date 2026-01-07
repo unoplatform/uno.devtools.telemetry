@@ -5,6 +5,8 @@
 //	- Extracted from dotnet.exe
 // 2024/12/05 (Jerome Laban <jerome@platform.uno>):
 //	- Updated for nullability
+// 2026/01/07 (carldebilly/copilot):
+//	- Added exception handling to prevent serialization exceptions from escaping
 //
 
 using System;

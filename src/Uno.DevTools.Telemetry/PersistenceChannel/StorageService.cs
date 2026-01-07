@@ -5,6 +5,11 @@
 //	- Extracted from dotnet.exe
 // 2024/12/05 (Jerome Laban <jerome@platform.uno>):
 //	- Updated for nullability
+// 2026/01/07 (carldebilly/copilot):
+//	- Added resiliency for concurrent access (multiple processes)
+//	- Added retry logic for Delete operations
+//	- Added FileShare modes for concurrent file access
+//	- Added File.Exists checks to prevent race conditions
 //
 
 using System;
@@ -206,7 +211,10 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				}
 
 				var fileSize = GetSize(item.FileName);
-				File.Delete(filePath);
+				
+				// Retry Delete operation for transient failures (concurrent access from other processes)
+				// This handles cases where multiple instances access the same storage folder
+				DeleteFileWithRetry(filePath);
 
 				_deletedFilesQueue.Enqueue(item.FileName);
 
@@ -219,6 +227,44 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				// Catch all exceptions including IOException, UnauthorizedAccessException, etc.
 				// Telemetry operations must never crash the host app.
 				PersistenceChannelDebugLog.WriteException(e, "Failed to delete a file. file: {0}", item == null ? "null" : item.FullFilePath);
+			}
+		}
+		
+		/// <summary>
+		///     Attempts to delete a file with retry for transient failures.
+		///     Handles concurrent access from multiple processes.
+		/// </summary>
+		private void DeleteFileWithRetry(string filePath)
+		{
+			const int maxRetries = 3;
+			const int retryDelayMs = 50;
+			
+			for (int attempt = 0; attempt < maxRetries; attempt++)
+			{
+				try
+				{
+					// Check if file still exists (may have been deleted by another process)
+					if (!File.Exists(filePath))
+					{
+						return; // Already deleted, success
+					}
+					
+					File.Delete(filePath);
+					return; // Success
+				}
+				catch (IOException) when (attempt < maxRetries - 1)
+				{
+					// IOException can occur with concurrent access (file in use by another process)
+					// Retry with a short delay
+					Thread.Sleep(retryDelayMs);
+				}
+				catch (UnauthorizedAccessException) when (attempt < maxRetries - 1)
+				{
+					// Can occur with concurrent access or permission issues
+					// Retry with a short delay
+					Thread.Sleep(retryDelayMs);
+				}
+				// Let other exceptions bubble up to be caught by the outer catch block
 			}
 		}
 
@@ -281,7 +327,9 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
             try
             {
-				using (Stream stream = File.OpenWrite(Path.Combine(StorageFolder, file)))
+				// FileShare.Read allows other processes to read while we're writing
+				// This supports multiple processes accessing the same storage folder
+				using (Stream stream = File.Open(Path.Combine(StorageFolder, file), FileMode.Create, FileAccess.Write, FileShare.Read))
 				{
 					await StorageTransmission.SaveAsync(transmission, stream).ConfigureAwait(false);
 				}
@@ -308,7 +356,10 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					throw new InvalidOperationException("The storage folder is not defined");
 				}
 
-				using (Stream stream = File.OpenRead(Path.Combine(StorageFolder, file)))
+				// FileShare.ReadWrite allows other processes to read/write while we're reading
+				// FileShare.Delete allows other processes to delete while we're reading
+				// This supports multiple processes accessing the same storage folder
+				using (Stream stream = File.Open(Path.Combine(StorageFolder, file), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
 				{
 					var storageTransmissionItem =
 						await StorageTransmission.CreateFromStreamAsync(stream, file).ConfigureAwait(false);
@@ -362,7 +413,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				if (StorageFolder is not null)
 				{
-					using (var stream = File.OpenRead(Path.Combine(StorageFolder, file)))
+					// FileShare.ReadWrite | FileShare.Delete allows concurrent access from other processes
+					using (var stream = File.Open(Path.Combine(StorageFolder, file), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
 					{
 						return stream.Length;
 					}

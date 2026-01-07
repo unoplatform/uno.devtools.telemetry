@@ -5,6 +5,10 @@
 //	- Extracted from dotnet.exe
 // 2024/12/05 (Jerome Laban <jerome@platform.uno>):
 //	- Updated for nullability
+// 2026/01/07 (carldebilly/copilot):
+//	- Added bounded retry policy (2 hours max)
+//	- Added SendLoop exception resilience
+//	- Unknown exceptions now retry with bounded limit
 //
 
 using System;

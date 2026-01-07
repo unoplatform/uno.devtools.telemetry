@@ -241,6 +241,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			const int maxRetries = 3;
 			const int retryDelayMs = 50;
 			
+			Exception? lastException = null;
+			
 			for (int attempt = 0; attempt < maxRetries; attempt++)
 			{
 				try
@@ -254,19 +256,30 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					File.Delete(filePath);
 					return; // Success
 				}
-				catch (IOException) when (attempt < maxRetries - 1)
+				catch (IOException ex)
 				{
 					// IOException can occur with concurrent access (file in use by another process)
-					// Retry with a short delay
-					Thread.Sleep(retryDelayMs);
+					lastException = ex;
+					if (attempt < maxRetries - 1)
+					{
+						Thread.Sleep(retryDelayMs);
+					}
 				}
-				catch (UnauthorizedAccessException) when (attempt < maxRetries - 1)
+				catch (UnauthorizedAccessException ex)
 				{
 					// Can occur with concurrent access or permission issues
-					// Retry with a short delay
-					Thread.Sleep(retryDelayMs);
+					lastException = ex;
+					if (attempt < maxRetries - 1)
+					{
+						Thread.Sleep(retryDelayMs);
+					}
 				}
-				// Let other exceptions bubble up to be caught by the outer catch block
+			}
+			
+			// All retries exhausted, throw the last exception to be caught by outer catch
+			if (lastException != null)
+			{
+				throw lastException;
 			}
 		}
 
@@ -383,19 +396,22 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// <summary>
 		///     Get files from <see cref="storageFolder" />.
 		/// </summary>
-		/// <param name="fileQuery">Define the logic for sorting the files.</param>
 		/// <param name="filterByExtension">Defines a file extension. This method will return only files with this extension.</param>
 		/// <param name="top">
 		///     Define how many files to return. This can be useful when the directory has a lot of files, in that case
 		///     GetFilesAsync will have a performance hit.
 		/// </param>
+		/// <returns>Returns only file names (not full paths).</returns>
 		private IEnumerable<string> GetFiles(string filterByExtension, int top)
 		{
 			try
 			{
 				if (StorageFolder != null)
 				{
-					return Directory.GetFiles(StorageFolder, filterByExtension).Take(top);
+					return Directory.GetFiles(StorageFolder, filterByExtension)
+						.Select(Path.GetFileName)
+						.Where(f => f != null)
+						.Take(top)!;
 				}
 			}
 			catch (Exception e)

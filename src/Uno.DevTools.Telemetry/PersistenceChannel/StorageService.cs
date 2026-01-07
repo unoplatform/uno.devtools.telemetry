@@ -235,11 +235,11 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// <summary>
 		///     Attempts to delete a file with retry for transient failures.
 		///     Handles concurrent access from multiple processes.
+		///     Uses immediate retry (no delays) to avoid Thread.Sleep which isn't supported in WebAssembly.
 		/// </summary>
 		private void DeleteFileWithRetry(string filePath)
 		{
 			const int maxRetries = 3;
-			const int retryDelayMs = 50;
 			
 			Exception? lastException = null;
 			
@@ -259,20 +259,16 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				catch (IOException ex)
 				{
 					// IOException can occur with concurrent access (file in use by another process)
+					// Retry immediately - delays aren't needed for typical file lock scenarios
+					// and Thread.Sleep is not supported in WebAssembly
 					lastException = ex;
-					if (attempt < maxRetries - 1)
-					{
-						Thread.Sleep(retryDelayMs);
-					}
 				}
 				catch (UnauthorizedAccessException ex)
 				{
 					// Can occur with concurrent access or permission issues
+					// Retry immediately - delays aren't needed for typical file lock scenarios
+					// and Thread.Sleep is not supported in WebAssembly
 					lastException = ex;
-					if (attempt < maxRetries - 1)
-					{
-						Thread.Sleep(retryDelayMs);
-					}
 				}
 			}
 			

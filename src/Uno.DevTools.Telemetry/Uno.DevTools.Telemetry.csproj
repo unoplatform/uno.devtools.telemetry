@@ -5,6 +5,7 @@
 		<LangVersion>latest</LangVersion>
 	</PropertyGroup>
 	
+	<!-- netstandard2.0 builds are strong-named; keep InternalsVisibleTo out to avoid requiring a signed test assembly. -->
 	<ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.0'">
 		<InternalsVisibleTo Include="Uno.DevTools.Telemetry.Tests" />
 	</ItemGroup>

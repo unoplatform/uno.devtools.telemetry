@@ -26,6 +26,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 	/// </summary>
 	internal sealed class Sender : IDisposable
 	{
+		private static readonly TimeSpan UnknownTransmissionAge = TimeSpan.MaxValue;
+
 		/// <summary>
 		///     The default sending interval.
 		/// </summary>
@@ -292,6 +294,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		
 		/// <summary>
 		///     Gets the age of a transmission based on the file creation time.
+		///     Returns <see cref="UnknownTransmissionAge" /> when the age cannot be determined.
 		/// </summary>
 		private TimeSpan GetTransmissionAge(StorageTransmission transmission)
 		{
@@ -312,8 +315,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				PersistenceChannelDebugLog.WriteException(e, "Failed to get transmission age");
 			}
 			
-			// Use TimeSpan.MaxValue as a sentinel for unknown age so callers treat it as expired
-			return TimeSpan.MaxValue;
+			return UnknownTransmissionAge;
 		}
 
 		/// <summary>

@@ -6,19 +6,23 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.ApplicationInsights.Channel;
 using Microsoft.ApplicationInsights.DataContracts;
-using Microsoft.ApplicationInsights.Extensibility.Implementation;
+using Microsoft.ApplicationInsights.Extensibility;
 
 namespace Uno.DevTools.Telemetry.Tests
 {
+	using AiTelemetry = Microsoft.ApplicationInsights.Channel.ITelemetry;
+
 	/// <summary>
 	///     Integration tests for telemetry resilience.
-	///     Note: These tests use Thread.Sleep to wait for background operations (DeleteObsoleteFiles, SendLoop).
-	///     While not ideal, this is acceptable for integration tests that verify real async behavior.
+	///     Note: These tests poll for background operations (DeleteObsoleteFiles, SendLoop) instead of using Thread.Sleep.
+	///     This keeps the tests more deterministic and reduces flakiness.
 	///     Future improvement: Use TimeProvider for deterministic time control.
 	/// </summary>
 	[TestClass]
 	public class PersistenceChannelResiliencyTests
 	{
+		private static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(50);
+
 		private readonly List<string> _directoriesToCleanup = new List<string>();
 
 		private string GetTempStorageDirectory()
@@ -73,7 +77,7 @@ namespace Uno.DevTools.Telemetry.Tests
 		}
 
 		[TestMethod]
-		public void Given_TrnFileOlderThan30Days_When_DeleteObsoleteFiles_Then_FileIsDeleted()
+		public async Task Given_TrnFileOlderThan30Days_When_DeleteObsoleteFiles_Then_FileIsDeleted()
 		{
 			// Arrange
 			var storageDir = GetTempStorageDirectory();
@@ -89,14 +93,17 @@ namespace Uno.DevTools.Telemetry.Tests
 			storage.Init(storageDir);
 
 			// Act - Wait for DeleteObsoleteFiles to run (it's called in Init as a background task)
-			Thread.Sleep(1000);
+			var deleted = await WaitUntilAsync(
+				() => !File.Exists(oldFilePath),
+				TimeSpan.FromSeconds(10),
+				DefaultPollInterval).ConfigureAwait(false);
 
 			// Assert
-			File.Exists(oldFilePath).Should().BeFalse();
+			deleted.Should().BeTrue("old .trn files should be deleted");
 		}
 
 		[TestMethod]
-		public void Given_CorruptFileOlderThan7Days_When_DeleteObsoleteFiles_Then_FileIsDeleted()
+		public async Task Given_CorruptFileOlderThan7Days_When_DeleteObsoleteFiles_Then_FileIsDeleted()
 		{
 			// Arrange
 			var storageDir = GetTempStorageDirectory();
@@ -112,10 +119,13 @@ namespace Uno.DevTools.Telemetry.Tests
 			storage.Init(storageDir);
 
 			// Act - Wait for DeleteObsoleteFiles to run
-			Thread.Sleep(1000);
+			var deleted = await WaitUntilAsync(
+				() => !File.Exists(oldCorruptFilePath),
+				TimeSpan.FromSeconds(10),
+				DefaultPollInterval).ConfigureAwait(false);
 
 			// Assert
-			File.Exists(oldCorruptFilePath).Should().BeFalse();
+			deleted.Should().BeTrue("old .corrupt files should be deleted");
 		}
 
 		[TestMethod]
@@ -127,11 +137,7 @@ namespace Uno.DevTools.Telemetry.Tests
 			storage.Init(storageDir);
 
 			// Create a transmission file
-			var transmission = new Transmission(
-				new Uri("https://dc.services.visualstudio.com/v2/track"),
-				new byte[] { 1, 2, 3 },
-				"application/json",
-				"");
+			var transmission = CreateTransmission(new byte[] { 1, 2, 3 }, "");
 
 			// Enqueue it
 			storage.EnqueueAsync(transmission).ConfigureAwait(false).GetAwaiter().GetResult();
@@ -176,8 +182,8 @@ namespace Uno.DevTools.Telemetry.Tests
 			var storageDir = GetTempStorageDirectory();
 			var channel = new PersistenceChannel.PersistenceChannel(storageDir, 1);
 
-			// Create a telemetry item that might cause serialization issues
-			var telemetry = new EventTelemetry("TestEvent");
+			// Create a telemetry item that will throw on serialization
+			var telemetry = new ThrowingTelemetry("denim-42-ga-blue");
 
 			// Act - This should not throw even if serialization fails internally
 			Action act = () => channel.Send(telemetry);
@@ -207,11 +213,7 @@ namespace Uno.DevTools.Telemetry.Tests
 			// This should not throw even though GetSize will fail
 			Action act = () =>
 			{
-				var transmission = new Transmission(
-					new Uri("https://dc.services.visualstudio.com/v2/track"),
-					new byte[] { 1, 2, 3 },
-					"application/json",
-					"");
+				var transmission = CreateTransmission(new byte[] { 1, 2, 3 }, "");
 				storage.EnqueueAsync(transmission).ConfigureAwait(false).GetAwaiter().GetResult();
 			};
 
@@ -220,7 +222,7 @@ namespace Uno.DevTools.Telemetry.Tests
 		}
 
 		[TestMethod]
-		public void Given_TransmissionOlderThan2Hours_When_Send_Then_TransmissionIsDropped()
+		public async Task Given_TransmissionOlderThan2Hours_When_Send_Then_TransmissionIsDropped()
 		{
 			// Arrange
 			var storageDir = GetTempStorageDirectory();
@@ -231,11 +233,7 @@ namespace Uno.DevTools.Telemetry.Tests
 			var oldFilePath = Path.Combine(storageDir, "20260107100000_old_transmission.trn");
 			
 			// Create a valid transmission file
-			var transmission = new Transmission(
-				new Uri("https://dc.services.visualstudio.com/v2/track"),
-				new byte[] { 1, 2, 3 },
-				"application/json",
-				"gzip");
+			var transmission = CreateTransmission(new byte[] { 1, 2, 3 }, "gzip");
 			
 			using (var stream = File.OpenWrite(oldFilePath))
 			{
@@ -249,51 +247,38 @@ namespace Uno.DevTools.Telemetry.Tests
 			var transmitter = new PersistenceTransmitter(storage, 1);
 
 			// Act - Wait for the sender to process the transmission
-			Thread.Sleep(2000);
+			var deleted = await WaitUntilAsync(
+				() => !File.Exists(oldFilePath),
+				TimeSpan.FromSeconds(10),
+				DefaultPollInterval).ConfigureAwait(false);
 
 			// Assert - The old file should have been deleted (dropped)
-			File.Exists(oldFilePath).Should().BeFalse();
+			deleted.Should().BeTrue("the old transmission file should be deleted by the persistence transmitter");
 
 			// Cleanup
 			transmitter.Dispose();
 		}
 
 		[TestMethod]
-		public void Given_ExceptionInSendLoop_When_SendLoop_Then_LoopContinues()
+		public async Task Given_ExceptionInSendLoop_When_SendLoop_Then_LoopContinues()
 		{
 			// Arrange
-			var storageDir = GetTempStorageDirectory();
-			var storage = new StorageService();
-			storage.Init(storageDir);
+			var storage = new ThrowingPeekStorageService();
+			var transmitter = new PersistenceTransmitter(storage, 1, createSenders: false);
+			using var sender = new Sender(storage, transmitter);
 
-			// Enqueue multiple transmissions
-			for (int i = 0; i < 3; i++)
-			{
-				var transmission = new Transmission(
-					new Uri("https://dc.services.visualstudio.com/v2/track"),
-					new byte[] { (byte)i },
-					"application/json",
-					"");
-				storage.EnqueueAsync(transmission).ConfigureAwait(false).GetAwaiter().GetResult();
-			}
+			// Act - Wait for the sender loop to recover and call Peek again
+			var loopContinued = await WaitUntilAsync(
+				() => storage.PeekCalls >= 2,
+				TimeSpan.FromSeconds(10),
+				DefaultPollInterval).ConfigureAwait(false);
 
-			// Create sender (this starts the SendLoop)
-			var transmitter = new PersistenceTransmitter(storage, 1);
-
-			// Act - Wait for processing
-			Thread.Sleep(2000);
-
-			// Assert - The sender should still be running despite any exceptions
-			// Even if some failed, the loop should continue processing
-			// We're not asserting a specific count because network availability affects this
-			// The key is that no exception crashed the process
-			
-			// Cleanup
-			transmitter.Dispose();
+			// Assert
+			loopContinued.Should().BeTrue("the send loop should continue after a peek exception");
 		}
 
 		[TestMethod]
-		public void Given_MultipleFilesOfDifferentTypes_When_DeleteObsoleteFiles_Then_OnlyExpiredFilesAreDeleted()
+		public async Task Given_MultipleFilesOfDifferentTypes_When_DeleteObsoleteFiles_Then_OnlyExpiredFilesAreDeleted()
 		{
 			// Arrange
 			var storageDir = GetTempStorageDirectory();
@@ -325,9 +310,13 @@ namespace Uno.DevTools.Telemetry.Tests
 			storage.Init(storageDir);
 
 			// Act - Wait for DeleteObsoleteFiles to run
-			Thread.Sleep(1000);
+			var deleted = await WaitUntilAsync(
+				() => !File.Exists(oldTrn) && !File.Exists(oldCorrupt) && !File.Exists(oldTmp),
+				TimeSpan.FromSeconds(10),
+				DefaultPollInterval).ConfigureAwait(false);
 
 			// Assert
+			deleted.Should().BeTrue("expired files should be deleted");
 			File.Exists(recentTrn).Should().BeTrue("recent .trn files should be kept");
 			File.Exists(oldTrn).Should().BeFalse("old .trn files (>30 days) should be deleted");
 			File.Exists(recentCorrupt).Should().BeTrue("recent .corrupt files should be kept");
@@ -345,11 +334,7 @@ namespace Uno.DevTools.Telemetry.Tests
 			storage.Init(storageDir);
 
 			// Create a transmission file
-			var transmission = new Transmission(
-				new Uri("https://dc.services.visualstudio.com/v2/track"),
-				new byte[] { 1, 2, 3 },
-				"application/json",
-				"");
+			var transmission = CreateTransmission(new byte[] { 1, 2, 3 }, "");
 
 			// Enqueue it
 			storage.EnqueueAsync(transmission).ConfigureAwait(false).GetAwaiter().GetResult();
@@ -367,6 +352,106 @@ namespace Uno.DevTools.Telemetry.Tests
 
 			// Assert
 			act.Should().NotThrow("Delete should handle non-existent files gracefully");
+		}
+
+		private static async Task<bool> WaitUntilAsync(
+			Func<bool> condition,
+			TimeSpan timeout,
+			TimeSpan pollInterval)
+		{
+			var stopAt = DateTime.UtcNow + timeout;
+			while (DateTime.UtcNow < stopAt)
+			{
+				if (condition())
+				{
+					return true;
+				}
+
+				await Task.Delay(pollInterval).ConfigureAwait(false);
+			}
+
+			return condition();
+		}
+
+		private static Transmission CreateTransmission(in byte[] content, in string contentEncoding)
+		{
+			return new Transmission(
+				new Uri("https://dc.services.visualstudio.com/v2/track"),
+				content,
+				"application/json",
+				contentEncoding);
+		}
+
+		private sealed class ThrowingTelemetry : AiTelemetry
+		{
+			private readonly string _telemetryName;
+
+			public ThrowingTelemetry(in string telemetryName)
+			{
+				_telemetryName = telemetryName;
+				Context = new TelemetryContext();
+				Timestamp = DateTimeOffset.UtcNow;
+			}
+
+			public DateTimeOffset Timestamp { get; set; }
+
+			public TelemetryContext Context { get; }
+
+			public IExtension? Extension { get; set; }
+
+			public string? Sequence { get; set; }
+
+			public void Sanitize()
+			{
+			}
+
+			public AiTelemetry DeepClone()
+			{
+				return new ThrowingTelemetry(_telemetryName)
+				{
+					Extension = Extension,
+					Sequence = Sequence,
+					Timestamp = Timestamp
+				};
+			}
+
+			public void SerializeData(ISerializationWriter serializationWriter)
+			{
+				throw new InvalidOperationException($"Serialization failed for {_telemetryName}.");
+			}
+		}
+
+		private sealed class ThrowingPeekStorageService : BaseStorageService
+		{
+			private int _peekCalls;
+
+			public int PeekCalls => _peekCalls;
+
+			internal override string? StorageDirectoryPath => null;
+
+			internal override void Init(string? desireStorageDirectoryPath)
+			{
+			}
+
+			internal override StorageTransmission? Peek()
+			{
+				var calls = Interlocked.Increment(ref _peekCalls);
+				if (calls == 1)
+				{
+					throw new IOException("Peek failed for testing resilience.");
+				}
+
+				return null;
+			}
+
+			internal override void Delete(StorageTransmission transmission)
+			{
+			}
+
+			internal override Task EnqueueAsync(Transmission transmission)
+			{
+				return Task.CompletedTask;
+			}
 		}
 	}
 }

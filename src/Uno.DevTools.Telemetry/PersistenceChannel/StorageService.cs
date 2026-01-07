@@ -196,10 +196,11 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				// Initial storage size calculation. 
 				CalculateSize();
 
-				var filePath = Path.Combine(StorageFolder, item.FileName);
+				var storageFolder = StorageFolder;
+				var filePath = Path.Combine(storageFolder, item.FileName);
 				
-				// Get file size before checking existence to avoid TOCTOU race condition
-				// If file doesn't exist, GetSize returns 0 which is handled correctly
+				// Get file size before any existence checks so storage accounting stays accurate.
+				// If the file doesn't exist, GetSize returns 0, which is the correct behavior for storage tracking.
 				var fileSize = GetSize(item.FileName);
 				
 				// Check if file exists before attempting operations
@@ -237,7 +238,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		///     Handles concurrent access from multiple processes.
 		///     Uses immediate retry (no delays) to avoid Thread.Sleep which isn't supported in WebAssembly.
 		/// </summary>
-		private void DeleteFileWithRetry(string filePath)
+		private void DeleteFileWithRetry(in string filePath)
 		{
 			const int maxRetries = 3;
 			
@@ -389,16 +390,13 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		///     GetFilesAsync will have a performance hit.
 		/// </param>
 		/// <returns>Returns only file names (not full paths).</returns>
-		private IEnumerable<string> GetFiles(string filterByExtension, int top)
+		private IEnumerable<string> GetFiles(in string filterByExtension, int top)
 		{
 			try
 			{
 				if (StorageFolder != null)
 				{
-					return Directory.GetFiles(StorageFolder, filterByExtension)
-						.Select(Path.GetFileName)
-						.Where(f => f != null)
-						.Take(top)!;
+					return EnumerateFiles(filterByExtension).Take(top);
 				}
 			}
 			catch (Exception e)
@@ -410,9 +408,31 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		}
 
 		/// <summary>
+		///     Enumerates files from <see cref="storageFolder" /> without limiting the count.
+		/// </summary>
+		private IEnumerable<string> EnumerateFiles(in string filterByExtension)
+		{
+			try
+			{
+				if (StorageFolder != null)
+				{
+					return Directory.EnumerateFiles(StorageFolder, filterByExtension)
+						.Select(file => Path.GetFileName(file) ?? string.Empty)
+						.Where(file => file.Length > 0);
+				}
+			}
+			catch (Exception e)
+			{
+				PersistenceChannelDebugLog.WriteException(e, "Peek failed while enumerate files from storage.");
+			}
+
+			return Enumerable.Empty<string>();
+		}
+
+		/// <summary>
 		///     Gets a file's size.
 		/// </summary>
-		private long GetSize(string file)
+		private long GetSize(in string file)
 		{
 			try
 			{
@@ -429,6 +449,28 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				// Guard against IO exceptions during size calculation
 				PersistenceChannelDebugLog.WriteException(e, "Failed to get file size. file: {0}", file);
+			}
+			
+			return 0;
+		}
+		
+		/// <summary>
+		///     Gets a file's size from a full path.
+		/// </summary>
+		private long GetSizeFromPath(in string filePath)
+		{
+			try
+			{
+				// FileShare.ReadWrite | FileShare.Delete allows concurrent access from other processes
+				using (var stream = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+				{
+					return stream.Length;
+				}
+			}
+			catch (Exception e)
+			{
+				// Guard against IO exceptions during size calculation
+				PersistenceChannelDebugLog.WriteException(e, "Failed to get file size. file: {0}", Path.GetFileName(filePath) ?? filePath);
 			}
 			
 			return 0;
@@ -451,7 +493,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					long storageSizeInBytes = 0;
 					foreach (var file in storageFiles)
 					{
-						storageSizeInBytes += GetSize(file);
+						storageSizeInBytes += GetSizeFromPath(file);
 					}
 
 					_storageSize = storageSizeInBytes;
@@ -481,82 +523,46 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				if (StorageFolder is not null)
 				{
-					// Delete old tmp files (5 minutes)
-					var tmpFiles = GetFiles("*.tmp", 50);
-					foreach (var file in tmpFiles)
-					{
-						try
-						{
-							var filePath = Path.Combine(StorageFolder, file);
-							if (!File.Exists(filePath))
-							{
-								continue; // File was already deleted or doesn't exist
-							}
-							
-							var creationTime = File.GetCreationTimeUtc(filePath);
-							if (DateTime.UtcNow - creationTime >= TimeSpan.FromMinutes(5))
-							{
-								File.Delete(filePath);
-							}
-						}
-						catch (Exception e)
-						{
-							PersistenceChannelDebugLog.WriteException(e, "Failed to delete tmp file: {0}", file);
-						}
-					}
-					
-					// Delete old trn files (30 days TTL)
-					var trnFiles = GetFiles("*.trn", 50);
-					foreach (var file in trnFiles)
-					{
-						try
-						{
-							var filePath = Path.Combine(StorageFolder, file);
-							if (!File.Exists(filePath))
-							{
-								continue; // File was already deleted or doesn't exist
-							}
-							
-							var creationTime = File.GetCreationTimeUtc(filePath);
-							if (DateTime.UtcNow - creationTime >= TransmissionFileTtl)
-							{
-								File.Delete(filePath);
-							}
-						}
-						catch (Exception e)
-						{
-							PersistenceChannelDebugLog.WriteException(e, "Failed to delete old trn file: {0}", file);
-						}
-					}
-					
-					// Delete old corrupt files (7 days TTL)
-					var corruptFiles = GetFiles("*.corrupt", 50);
-					foreach (var file in corruptFiles)
-					{
-						try
-						{
-							var filePath = Path.Combine(StorageFolder, file);
-							if (!File.Exists(filePath))
-							{
-								continue; // File was already deleted or doesn't exist
-							}
-							
-							var creationTime = File.GetCreationTimeUtc(filePath);
-							if (DateTime.UtcNow - creationTime >= CorruptedFileTtl)
-							{
-								File.Delete(filePath);
-							}
-						}
-						catch (Exception e)
-						{
-							PersistenceChannelDebugLog.WriteException(e, "Failed to delete old corrupt file: {0}", file);
-						}
-					}
+					DeleteObsoleteFilesByExtension("*.tmp", TimeSpan.FromMinutes(5));
+					DeleteObsoleteFilesByExtension("*.trn", TransmissionFileTtl);
+					DeleteObsoleteFilesByExtension("*.corrupt", CorruptedFileTtl);
 				}
 			}
 			catch (Exception e)
 			{
 				PersistenceChannelDebugLog.WriteException(e, "Failed to delete obsolete files.");
+			}
+		}
+
+		private void DeleteObsoleteFilesByExtension(in string filterByExtension, in TimeSpan ttl)
+		{
+			if (StorageFolder is null)
+			{
+				return;
+			}
+
+			var storageFolder = StorageFolder;
+			var now = DateTime.UtcNow;
+			foreach (var file in EnumerateFiles(filterByExtension))
+			{
+				try
+				{
+					var filePath = Path.Combine(storageFolder, file);
+					if (!File.Exists(filePath))
+					{
+						continue; // File was already deleted or doesn't exist
+					}
+					
+					var creationTime = File.GetCreationTimeUtc(filePath);
+					if (now - creationTime >= ttl)
+					{
+						DeleteFileWithRetry(filePath);
+					}
+				}
+				catch (Exception e)
+				{
+					PersistenceChannelDebugLog.WriteException(e, "Failed to delete obsolete file: {0}", file);
+				}
 			}
 		}
 		
@@ -581,7 +587,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					// This handles the case where RenameToCorrupted is called multiple times
 					if (File.Exists(corruptedPath))
 					{
-						File.Delete(corruptedPath);
+						DeleteFileWithRetry(corruptedPath);
 					}
 					
 					File.Move(sourcePath, corruptedPath);

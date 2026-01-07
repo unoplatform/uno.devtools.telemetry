@@ -22,7 +22,10 @@ namespace Uno.DevTools.Telemetry
             var assembly = typeof(T).Assembly;
             var attr = assembly.GetCustomAttribute<TelemetryAttribute>();
             if (attr == null)
-                throw new InvalidOperationException($"Assembly {assembly.GetName().Name} is missing [Telemetry] attribute.");
+                throw new InvalidOperationException(
+                    $"Assembly '{assembly.GetName().Name}' is missing [Telemetry] attribute. " +
+                    "Add [assembly: Telemetry(\"<instrumentation-key>\", EventsPrefix = \"<prefix>\")] " +
+                    "or register ITelemetry with AddTelemetry(instrumentationKey, eventNamePrefix, ...).");
 
             var instrumentationKey = attr.InstrumentationKey;
             var prefix = attr.EventsPrefix ?? string.Empty;

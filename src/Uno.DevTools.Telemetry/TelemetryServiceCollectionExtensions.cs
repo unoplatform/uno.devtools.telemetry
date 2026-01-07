@@ -70,13 +70,24 @@ public static class TelemetryServiceCollectionExtensions
         return services;
     }
 
-    private class TelemetryGenericFactory<T>(IServiceProvider sp) : ITelemetry<T>
+    private class TelemetryGenericFactory<T> : ITelemetry<T>
     {
-        private readonly ITelemetry<T> _inner = TelemetryFactory.Create<T>();
+        private readonly ITelemetry<T> _inner;
+
+        public TelemetryGenericFactory(IServiceProvider services)
+        {
+            if (services == null)
+            {
+                throw new ArgumentNullException(nameof(services));
+            }
+            _inner = TelemetryFactory.Create<T>();
+        }
+
         public bool Enabled => _inner.Enabled;
         public void Dispose() => _inner.Dispose();
         public void Flush() => _inner.Flush();
         public Task FlushAsync(CancellationToken ct) => _inner.FlushAsync(ct);
+        public Task<string?> GetMachineIdAsync(CancellationToken ct) => _inner.GetMachineIdAsync(ct);
         public void ThreadBlockingTrackEvent(string eventName, IDictionary<string, string> properties, IDictionary<string, double> measurements) => _inner.ThreadBlockingTrackEvent(eventName, properties, measurements);
         public void TrackEvent(string eventName, (string key, string value)[]? properties, (string key, double value)[]? measurements) => _inner.TrackEvent(eventName, properties, measurements);
         public void TrackEvent(string eventName, IDictionary<string, string>? properties, IDictionary<string, double>? measurements) => _inner.TrackEvent(eventName, properties, measurements);

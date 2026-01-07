@@ -39,7 +39,7 @@ namespace Uno.DevTools.Telemetry
         {
             if (string.IsNullOrEmpty(baseFilePath))
                 throw new ArgumentNullException(nameof(baseFilePath));
-            if (string.IsNullOrEmpty(context))
+            if (context == null)
                 throw new ArgumentNullException(nameof(context));
 
             _filePath = baseFilePath;
@@ -81,6 +81,9 @@ namespace Uno.DevTools.Telemetry
 
         public Task FlushAsync(CancellationToken ct) => Task.CompletedTask;
 
+        public Task<string?> GetMachineIdAsync(CancellationToken ct)
+            => Task.FromResult<string?>(null);
+
         public void ThreadBlockingTrackEvent(string eventName, IDictionary<string, string> properties, IDictionary<string, double> measurements)
         {
             TrackEvent(eventName, properties, measurements);
@@ -111,13 +114,9 @@ namespace Uno.DevTools.Telemetry
 
         public void TrackEvent(string eventName, IDictionary<string, string>? properties, IDictionary<string, double>? measurements)
         {
-            // Add the context prefix to properties if specified
-            var finalProperties = properties;
-            if (!string.IsNullOrEmpty(_contextPrefix))
-            {
-                // Clone properties and add context
-                finalProperties = properties != null ? new Dictionary<string, string>(properties) : new Dictionary<string, string>();
-            }
+            var prefixedEventName = string.IsNullOrEmpty(_contextPrefix)
+                ? eventName
+                : _contextPrefix + "/" + eventName;
 
             var telemetryEvent = new
             {
@@ -126,8 +125,8 @@ namespace Uno.DevTools.Telemetry
 #else
                 Timestamp = DateTime.Now, // Fallback for netstandard2.0
 #endif
-                EventName = eventName,
-                Properties = finalProperties,
+                EventName = prefixedEventName,
+                Properties = properties,
                 Measurements = measurements
             };
 
@@ -137,7 +136,9 @@ namespace Uno.DevTools.Telemetry
             {
                 try
                 {
-                    var line = _contextPrefix + ": " + json + Environment.NewLine;
+                    var line = string.IsNullOrEmpty(_contextPrefix)
+                        ? json + Environment.NewLine
+                        : _contextPrefix + ": " + json + Environment.NewLine;
                     File.AppendAllText(_filePath, line);
                 }
                 catch (Exception ex)

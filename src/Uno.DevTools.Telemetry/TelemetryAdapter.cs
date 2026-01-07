@@ -13,7 +13,7 @@ public record TelemetryAdapter<T> : ITelemetry<T>
 
     public TelemetryAdapter(IServiceProvider services)
     {
-        Inner = services.GetService<ITelemetry>()!;
+        Inner = services.GetRequiredService<ITelemetry>();
     }
 
     /// <inheritdoc />
@@ -27,6 +27,10 @@ public record TelemetryAdapter<T> : ITelemetry<T>
     /// <inheritdoc />
     public Task FlushAsync(CancellationToken ct)
         => Inner.FlushAsync(ct);
+
+    /// <inheritdoc />
+    public Task<string?> GetMachineIdAsync(CancellationToken ct)
+        => Inner.GetMachineIdAsync(ct);
 
     /// <inheritdoc />
     public void ThreadBlockingTrackEvent(string eventName, IDictionary<string, string> properties, IDictionary<string, double> measurements)

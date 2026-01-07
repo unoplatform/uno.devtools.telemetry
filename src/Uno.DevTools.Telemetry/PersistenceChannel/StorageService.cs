@@ -191,8 +191,22 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				// Initial storage size calculation. 
 				CalculateSize();
 
+				var filePath = Path.Combine(StorageFolder, item.FileName);
+				
+				// Check if file exists before attempting operations
+				// This prevents UnauthorizedAccessException when file doesn't exist
+				// (race condition: Delete called before file created, or file already deleted)
+				if (!File.Exists(filePath))
+				{
+					PersistenceChannelDebugLog.WriteLine(
+						string.Format(CultureInfo.InvariantCulture,
+							"File does not exist, skipping delete: {0}",
+							item.FileName));
+					return;
+				}
+
 				var fileSize = GetSize(item.FileName);
-				File.Delete(Path.Combine(StorageFolder, item.FileName));
+				File.Delete(filePath);
 
 				_deletedFilesQueue.Enqueue(item.FileName);
 
@@ -416,10 +430,16 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					{
 						try
 						{
-							var creationTime = File.GetCreationTimeUtc(Path.Combine(StorageFolder, file));
+							var filePath = Path.Combine(StorageFolder, file);
+							if (!File.Exists(filePath))
+							{
+								continue; // File was already deleted or doesn't exist
+							}
+							
+							var creationTime = File.GetCreationTimeUtc(filePath);
 							if (DateTime.UtcNow - creationTime >= TimeSpan.FromMinutes(5))
 							{
-								File.Delete(Path.Combine(StorageFolder, file));
+								File.Delete(filePath);
 							}
 						}
 						catch (Exception e)
@@ -434,10 +454,16 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					{
 						try
 						{
-							var creationTime = File.GetCreationTimeUtc(Path.Combine(StorageFolder, file));
+							var filePath = Path.Combine(StorageFolder, file);
+							if (!File.Exists(filePath))
+							{
+								continue; // File was already deleted or doesn't exist
+							}
+							
+							var creationTime = File.GetCreationTimeUtc(filePath);
 							if (DateTime.UtcNow - creationTime >= TransmissionFileTtl)
 							{
-								File.Delete(Path.Combine(StorageFolder, file));
+								File.Delete(filePath);
 							}
 						}
 						catch (Exception e)
@@ -452,10 +478,16 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					{
 						try
 						{
-							var creationTime = File.GetCreationTimeUtc(Path.Combine(StorageFolder, file));
+							var filePath = Path.Combine(StorageFolder, file);
+							if (!File.Exists(filePath))
+							{
+								continue; // File was already deleted or doesn't exist
+							}
+							
+							var creationTime = File.GetCreationTimeUtc(filePath);
 							if (DateTime.UtcNow - creationTime >= CorruptedFileTtl)
 							{
-								File.Delete(Path.Combine(StorageFolder, file));
+								File.Delete(filePath);
 							}
 						}
 						catch (Exception e)

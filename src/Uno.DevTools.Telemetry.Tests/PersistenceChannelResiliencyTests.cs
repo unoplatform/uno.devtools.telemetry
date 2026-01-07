@@ -338,5 +338,38 @@ namespace Uno.DevTools.Telemetry.Tests
 			File.Exists(oldTmp).Should().BeFalse("old .tmp files (>5 minutes) should be deleted");
 			File.Exists(recentTmp).Should().BeTrue("recent .tmp files should be kept");
 		}
+
+		[TestMethod]
+		public void Given_NonExistentFile_When_Delete_Then_NoExceptionThrown()
+		{
+			// Arrange
+			var storageDir = GetTempStorageDirectory();
+			var storage = new StorageService();
+			storage.Init(storageDir);
+
+			// Create a transmission file
+			var transmission = new Transmission(
+				new Uri("https://dc.services.visualstudio.com/v2/track"),
+				new byte[] { 1, 2, 3 },
+				"application/json",
+				"");
+
+			// Enqueue it
+			storage.EnqueueAsync(transmission).ConfigureAwait(false).GetAwaiter().GetResult();
+
+			// Peek it to get the StorageTransmission
+			var storageTransmission = storage.Peek();
+			storageTransmission.Should().NotBeNull();
+
+			// Delete the file manually to simulate race condition
+			var filePath = Path.Combine(storageDir, storageTransmission!.FileName);
+			File.Delete(filePath);
+
+			// Act - This should not throw when file doesn't exist
+			Action act = () => storage.Delete(storageTransmission);
+
+			// Assert
+			act.Should().NotThrow("Delete should handle non-existent files gracefully");
+		}
 	}
 }

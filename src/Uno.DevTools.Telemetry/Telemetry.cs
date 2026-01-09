@@ -112,6 +112,7 @@ namespace Uno.DevTools.Telemetry
             // 3. Atomically swap _trackEventTask to the new continuation only if it still matches originalTask
             // 4. If another thread changed it, retry with the new value
             // This ensures all events are sent in order, even with concurrent calls.
+            // Note: On single-threaded WASM, there's no concurrent access, so the exchange succeeds immediately.
             while (true)
             {
                 var originalTask = _trackEventTask;
@@ -123,6 +124,7 @@ namespace Uno.DevTools.Telemetry
                 {
                     break;
                 }
+                // Yield to allow other threads to progress. On single-threaded platforms, this is a no-op.
                 Thread.Yield();
             }
         }
@@ -272,6 +274,20 @@ namespace Uno.DevTools.Telemetry
             return eventMeasurements;
         }
 
+        private IDictionary<string, double> GetEventMeasures(IReadOnlyDictionary<string, double>? measurements)
+        {
+            var eventMeasurements = new Dictionary<string, double>(_commonMeasurements?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                ?? new Dictionary<string, double>(0));
+            if (measurements != null)
+            {
+                foreach (var measurement in measurements)
+                {
+                    eventMeasurements[measurement.Key] = measurement.Value;
+                }
+            }
+            return eventMeasurements;
+        }
+
         private IDictionary<string, string>? GetEventProperties(IDictionary<string, string>? properties)
         {
             if (properties == null)
@@ -289,6 +305,107 @@ namespace Uno.DevTools.Telemetry
                 eventProperties[property.Key] = property.Value;
             }
             return eventProperties;
+        }
+
+        private IDictionary<string, string>? GetEventProperties(IReadOnlyDictionary<string, string>? properties)
+        {
+            if (properties == null)
+            {
+                return _commonProperties is IDictionary<string, string> commonProperties
+                    ? commonProperties
+                    : new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                        ?? new Dictionary<string, string>(0));
+            }
+
+            var eventProperties = new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                ?? new Dictionary<string, string>(0));
+            foreach (var property in properties)
+            {
+                eventProperties[property.Key] = property.Value;
+            }
+            return eventProperties;
+        }
+
+        public void TrackException(
+            Exception exception,
+            IReadOnlyDictionary<string, string>? properties = null,
+            IReadOnlyDictionary<string, double>? measurements = null,
+            ExceptionSeverity severity = ExceptionSeverity.Error)
+        {
+            if (!Enabled || _trackEventTask is null || exception == null)
+            {
+                return;
+            }
+
+            // Use the same lock-free chaining pattern as TrackEvent
+            // Note: On single-threaded WASM, there's no concurrent access, so the exchange succeeds immediately.
+            while (true)
+            {
+                var originalTask = _trackEventTask;
+                var continuation = originalTask.ContinueWith(
+                    x => TrackExceptionTask(exception, properties, measurements, severity)
+                );
+                var exchanged = Interlocked.CompareExchange(ref _trackEventTask, continuation, originalTask);
+                if (exchanged == originalTask)
+                {
+                    break;
+                }
+                // Yield to allow other threads to progress. On single-threaded platforms, this is a no-op.
+                Thread.Yield();
+            }
+        }
+
+        private void TrackExceptionTask(
+            Exception exception,
+            IReadOnlyDictionary<string, string>? properties,
+            IReadOnlyDictionary<string, double>? measurements,
+            ExceptionSeverity severity)
+        {
+            if (_client == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var eventProperties = GetEventProperties(properties);
+                var eventMeasurements = GetEventMeasures(measurements);
+
+                var exceptionTelemetry = new Microsoft.ApplicationInsights.DataContracts.ExceptionTelemetry(exception);
+                
+                // Map ExceptionSeverity to Application Insights SeverityLevel
+                exceptionTelemetry.SeverityLevel = severity switch
+                {
+                    ExceptionSeverity.Critical => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Critical,
+                    ExceptionSeverity.Error => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Error,
+                    ExceptionSeverity.Warning => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Warning,
+                    ExceptionSeverity.Info => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Information,
+                    ExceptionSeverity.Debug => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Verbose,
+                    _ => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Error
+                };
+
+                if (eventProperties != null)
+                {
+                    foreach (var property in eventProperties)
+                    {
+                        exceptionTelemetry.Properties[property.Key] = property.Value;
+                    }
+                }
+
+                if (eventMeasurements != null)
+                {
+                    foreach (var measurement in eventMeasurements)
+                    {
+                        exceptionTelemetry.Metrics[measurement.Key] = measurement.Value;
+                    }
+                }
+
+                _client.TrackException(exceptionTelemetry);
+            }
+            catch (Exception e)
+            {
+                Debug.Fail(e.ToString());
+            }
         }
     }
 }

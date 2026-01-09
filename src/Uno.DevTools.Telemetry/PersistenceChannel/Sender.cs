@@ -26,8 +26,6 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 	/// </summary>
 	internal sealed class Sender : IDisposable
 	{
-		private static readonly TimeSpan UnknownTransmissionAge = TimeSpan.MaxValue;
-
 		/// <summary>
 		///     The default sending interval.
 		/// </summary>
@@ -248,15 +246,24 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				if (transmission != null)
 				{
 					// Check if we've been retrying for more than MaxRetryDuration (2 hours)
-					var fileAge = GetTransmissionAge(transmission);
-					if (fileAge >= StorageService.MaxRetryDuration)
+					if (TryGetTransmissionAge(transmission, out var fileAge))
+					{
+						if (fileAge >= StorageService.MaxRetryDuration)
+						{
+							PersistenceChannelDebugLog.WriteLine(
+								string.Format(CultureInfo.InvariantCulture,
+									"Transmission has exceeded max retry duration ({0}). Dropping file: {1}",
+									StorageService.MaxRetryDuration,
+									transmission.FileName));
+							return false; // Drop the transmission
+						}
+					}
+					else
 					{
 						PersistenceChannelDebugLog.WriteLine(
 							string.Format(CultureInfo.InvariantCulture,
-								"Transmission has exceeded max retry duration ({0}). Dropping file: {1}",
-								StorageService.MaxRetryDuration,
+								"Unable to determine transmission age for file: {0}. Retrying with bounded backoff.",
 								transmission.FileName));
-						return false; // Drop the transmission
 					}
 					
 					var isConnected = NetworkInterface.GetIsNetworkAvailable();
@@ -293,11 +300,13 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		}
 		
 		/// <summary>
-		///     Gets the age of a transmission based on the file creation time.
-		///     Returns <see cref="UnknownTransmissionAge" /> when the age cannot be determined.
+		///     Attempts to get the age of a transmission based on the file creation time.
+		///     Falls back to the timestamp encoded in the file name when file metadata is unavailable.
 		/// </summary>
-		private TimeSpan GetTransmissionAge(StorageTransmission transmission)
+		private bool TryGetTransmissionAge(StorageTransmission transmission, out TimeSpan age)
 		{
+			age = default;
+
 			try
 			{
 				if (_storage.StorageDirectoryPath is not null && !string.IsNullOrEmpty(transmission.FileName))
@@ -306,7 +315,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					if (File.Exists(filePath))
 					{
 						var creationTime = File.GetCreationTimeUtc(filePath);
-						return DateTime.UtcNow - creationTime;
+						age = DateTime.UtcNow - creationTime;
+						return true;
 					}
 				}
 			}
@@ -314,8 +324,38 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				PersistenceChannelDebugLog.WriteException(e, "Failed to get transmission age");
 			}
-			
-			return UnknownTransmissionAge;
+
+			return TryGetTransmissionAgeFromFileName(transmission.FileName, out age);
+		}
+
+		private static bool TryGetTransmissionAgeFromFileName(in string fileName, out TimeSpan age)
+		{
+			age = default;
+
+			if (string.IsNullOrEmpty(fileName))
+			{
+				return false;
+			}
+
+			var underscoreIndex = fileName.IndexOf('_');
+			if (underscoreIndex <= 0)
+			{
+				return false;
+			}
+
+			var timestampText = fileName.Substring(0, underscoreIndex);
+			if (!DateTime.TryParseExact(
+				timestampText,
+				"yyyyMMddHHmmss",
+				CultureInfo.InvariantCulture,
+				DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+				out var timestamp))
+			{
+				return false;
+			}
+
+			age = DateTime.UtcNow - timestamp;
+			return true;
 		}
 
 		/// <summary>

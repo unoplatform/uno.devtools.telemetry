@@ -23,6 +23,8 @@ namespace Uno.DevTools.Telemetry
         // Do not mutate after initialization to avoid race conditions in concurrent scenarios.
         private IReadOnlyDictionary<string, string>? _commonProperties;
         private IReadOnlyDictionary<string, double>? _commonMeasurements;
+        private IReadOnlyDictionary<string, string>? _scopeProperties;
+        private IReadOnlyDictionary<string, double>? _scopeMeasurements;
         private TelemetryConfiguration? _telemetryConfig;
         private Task? _trackEventTask;
         private string? _storageDirectoryPath;
@@ -260,8 +262,46 @@ namespace Uno.DevTools.Telemetry
 
         private IDictionary<string, double> GetEventMeasures(IDictionary<string, double>? measurements)
         {
+            // Start with common measurements
             var eventMeasurements = new Dictionary<string, double>(_commonMeasurements?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
                 ?? new Dictionary<string, double>(0));
+            
+            // Layer on scope measurements (overrides common)
+            if (_scopeMeasurements != null)
+            {
+                foreach (var measurement in _scopeMeasurements)
+                {
+                    eventMeasurements[measurement.Key] = measurement.Value;
+                }
+            }
+            
+            // Layer on event-specific measurements (overrides scope and common)
+            if (measurements != null)
+            {
+                foreach (var measurement in measurements)
+                {
+                    eventMeasurements[measurement.Key] = measurement.Value;
+                }
+            }
+            return eventMeasurements;
+        }
+
+        private IDictionary<string, double> GetEventMeasures(IReadOnlyDictionary<string, double>? measurements)
+        {
+            // Start with common measurements
+            var eventMeasurements = new Dictionary<string, double>(_commonMeasurements?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                ?? new Dictionary<string, double>(0));
+            
+            // Layer on scope measurements (overrides common)
+            if (_scopeMeasurements != null)
+            {
+                foreach (var measurement in _scopeMeasurements)
+                {
+                    eventMeasurements[measurement.Key] = measurement.Value;
+                }
+            }
+            
+            // Layer on event-specific measurements (overrides scope and common)
             if (measurements != null)
             {
                 foreach (var measurement in measurements)
@@ -274,21 +314,212 @@ namespace Uno.DevTools.Telemetry
 
         private IDictionary<string, string>? GetEventProperties(IDictionary<string, string>? properties)
         {
-            if (properties == null)
-            {
-                return _commonProperties is IDictionary<string, string> commonProperties
-                    ? commonProperties
-                    : new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
-                        ?? new Dictionary<string, string>(0));
-            }
-
+            // Start with common properties
             var eventProperties = new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
                 ?? new Dictionary<string, string>(0));
-            foreach (var property in properties)
+            
+            // Layer on scope properties (overrides common)
+            if (_scopeProperties != null)
             {
-                eventProperties[property.Key] = property.Value;
+                foreach (var property in _scopeProperties)
+                {
+                    eventProperties[property.Key] = property.Value;
+                }
             }
-            return eventProperties;
+            
+            // Layer on event-specific properties (overrides scope and common)
+            if (properties != null)
+            {
+                foreach (var property in properties)
+                {
+                    eventProperties[property.Key] = property.Value;
+                }
+            }
+            
+            return eventProperties.Count > 0 ? eventProperties : null;
+        }
+
+        private IDictionary<string, string>? GetEventProperties(IReadOnlyDictionary<string, string>? properties)
+        {
+            // Start with common properties
+            var eventProperties = new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                ?? new Dictionary<string, string>(0));
+            
+            // Layer on scope properties (overrides common)
+            if (_scopeProperties != null)
+            {
+                foreach (var property in _scopeProperties)
+                {
+                    eventProperties[property.Key] = property.Value;
+                }
+            }
+            
+            // Layer on event-specific properties (overrides scope and common)
+            if (properties != null)
+            {
+                foreach (var property in properties)
+                {
+                    eventProperties[property.Key] = property.Value;
+                }
+            }
+            
+            return eventProperties.Count > 0 ? eventProperties : null;
+        }
+
+        public ITelemetry CreateScope(
+            IReadOnlyDictionary<string, string>? properties = null,
+            IReadOnlyDictionary<string, double>? measurements = null)
+        {
+            if (!Enabled)
+            {
+                return this;
+            }
+
+            // Create a new Telemetry instance that shares the same client but has merged scope properties/measurements
+            var scopedTelemetry = new Telemetry(
+                _instrumentationKey,
+                _eventNamePrefix,
+                _versionAssembly,
+                _currentSessionId,
+                blockThreadInitialization: false,
+                enabledProvider: () => Enabled,
+                currentDirectoryProvider: _currentDirectoryProvider,
+                productName: _productName)
+            {
+                // Share the same client and initialization state
+                _client = this._client,
+                _commonProperties = this._commonProperties,
+                _commonMeasurements = this._commonMeasurements,
+                _telemetryConfig = this._telemetryConfig,
+                _trackEventTask = this._trackEventTask,
+                _persistenceChannel = this._persistenceChannel,
+                _storageDirectoryPath = this._storageDirectoryPath,
+                _settingsStorageDirectoryPath = this._settingsStorageDirectoryPath
+            };
+
+            // Merge parent scope properties with new scope properties
+            if (_scopeProperties != null || properties != null)
+            {
+                var merged = new Dictionary<string, string>();
+                if (_scopeProperties != null)
+                {
+                    foreach (var kvp in _scopeProperties)
+                    {
+                        merged[kvp.Key] = kvp.Value;
+                    }
+                }
+                if (properties != null)
+                {
+                    foreach (var kvp in properties)
+                    {
+                        merged[kvp.Key] = kvp.Value;
+                    }
+                }
+                scopedTelemetry._scopeProperties = merged;
+            }
+
+            // Merge parent scope measurements with new scope measurements
+            if (_scopeMeasurements != null || measurements != null)
+            {
+                var merged = new Dictionary<string, double>();
+                if (_scopeMeasurements != null)
+                {
+                    foreach (var kvp in _scopeMeasurements)
+                    {
+                        merged[kvp.Key] = kvp.Value;
+                    }
+                }
+                if (measurements != null)
+                {
+                    foreach (var kvp in measurements)
+                    {
+                        merged[kvp.Key] = kvp.Value;
+                    }
+                }
+                scopedTelemetry._scopeMeasurements = merged;
+            }
+
+            return scopedTelemetry;
+        }
+
+        public void TrackException(
+            Exception exception,
+            IReadOnlyDictionary<string, string>? properties = null,
+            IReadOnlyDictionary<string, double>? measurements = null,
+            TelemetrySeverity severity = TelemetrySeverity.Error)
+        {
+            if (!Enabled || _trackEventTask is null || exception == null)
+            {
+                return;
+            }
+
+            // Use the same lock-free chaining pattern as TrackEvent
+            while (true)
+            {
+                var originalTask = _trackEventTask;
+                var continuation = originalTask.ContinueWith(
+                    x => TrackExceptionTask(exception, properties, measurements, severity)
+                );
+                var exchanged = Interlocked.CompareExchange(ref _trackEventTask, continuation, originalTask);
+                if (exchanged == originalTask)
+                {
+                    break;
+                }
+                Thread.Yield();
+            }
+        }
+
+        private void TrackExceptionTask(
+            Exception exception,
+            IReadOnlyDictionary<string, string>? properties,
+            IReadOnlyDictionary<string, double>? measurements,
+            TelemetrySeverity severity)
+        {
+            if (_client == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var eventProperties = GetEventProperties(properties);
+                var eventMeasurements = GetEventMeasures(measurements);
+
+                var exceptionTelemetry = new Microsoft.ApplicationInsights.DataContracts.ExceptionTelemetry(exception);
+                
+                // Map TelemetrySeverity to Application Insights SeverityLevel
+                exceptionTelemetry.SeverityLevel = severity switch
+                {
+                    TelemetrySeverity.Critical => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Critical,
+                    TelemetrySeverity.Error => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Error,
+                    TelemetrySeverity.Warning => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Warning,
+                    TelemetrySeverity.Info => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Information,
+                    TelemetrySeverity.Debug => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Verbose,
+                    _ => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Error
+                };
+
+                if (eventProperties != null)
+                {
+                    foreach (var property in eventProperties)
+                    {
+                        exceptionTelemetry.Properties[property.Key] = property.Value;
+                    }
+                }
+
+                if (eventMeasurements != null)
+                {
+                    foreach (var measurement in eventMeasurements)
+                    {
+                        exceptionTelemetry.Metrics[measurement.Key] = measurement.Value;
+                    }
+                }
+
+                _client.TrackException(exceptionTelemetry);
+            }
+            catch (Exception e)
+            {
+                Debug.Fail(e.ToString());
+            }
         }
     }
 }

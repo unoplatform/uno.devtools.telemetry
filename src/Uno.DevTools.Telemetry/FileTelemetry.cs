@@ -13,6 +13,9 @@ namespace Uno.DevTools.Telemetry
     /// </summary>
     public sealed class FileTelemetry : ITelemetry
     {
+        private const string TelemetryTypeEvent = "event";
+        private const string TelemetryTypeException = "exception";
+
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
             WriteIndented = false // Use single-line JSON for easier parsing in tests
@@ -159,7 +162,7 @@ namespace Uno.DevTools.Telemetry
 
             var telemetryEvent = new
             {
-                Type = "event",
+                Type = TelemetryTypeEvent,
 #if NET8_0_OR_GREATER
                 Timestamp = _timeProvider.GetLocalNow().DateTime, // Use TimeProvider for testability
 #else
@@ -243,7 +246,7 @@ namespace Uno.DevTools.Telemetry
 
             var exceptionEvent = new
             {
-                Type = "exception",
+                Type = TelemetryTypeException,
 #if NET8_0_OR_GREATER
                 Timestamp = _timeProvider.GetLocalNow().DateTime,
 #else

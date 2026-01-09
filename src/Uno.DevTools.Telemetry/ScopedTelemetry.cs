@@ -54,18 +54,6 @@ namespace Uno.DevTools.Telemetry
             _inner.TrackEvent(eventName, mergedProperties, mergedMeasurements);
         }
 
-        public ITelemetry CreateScope(
-            IReadOnlyDictionary<string, string>? properties = null,
-            IReadOnlyDictionary<string, double>? measurements = null)
-        {
-            // Merge current scope with new scope
-            var mergedProperties = MergeScopeProperties(properties);
-            var mergedMeasurements = MergeScopeMeasurements(measurements);
-
-            // Return new scoped wrapper with merged context
-            return new ScopedTelemetry(_inner, mergedProperties, mergedMeasurements);
-        }
-
         public void TrackException(
             Exception exception,
             IReadOnlyDictionary<string, string>? properties = null,
@@ -78,31 +66,12 @@ namespace Uno.DevTools.Telemetry
         }
 
         private Dictionary<string, string> MergeProperties(IReadOnlyDictionary<string, string>? eventProperties)
-        {
-            var merged = new Dictionary<string, string>();
-
-            // Add scope properties first
-            if (_scopeProperties != null)
-            {
-                foreach (var kvp in _scopeProperties)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-
-            // Override with event-specific properties
-            if (eventProperties != null)
-            {
-                foreach (var kvp in eventProperties)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-
-            return merged;
-        }
+            => MergePropertiesCore(eventProperties);
 
         private Dictionary<string, string> MergeProperties(IDictionary<string, string>? eventProperties)
+            => MergePropertiesCore(eventProperties);
+
+        private Dictionary<string, string> MergePropertiesCore(IEnumerable<KeyValuePair<string, string>>? eventProperties)
         {
             var merged = new Dictionary<string, string>();
 
@@ -128,31 +97,12 @@ namespace Uno.DevTools.Telemetry
         }
 
         private Dictionary<string, double> MergeMeasurements(IReadOnlyDictionary<string, double>? eventMeasurements)
-        {
-            var merged = new Dictionary<string, double>();
-
-            // Add scope measurements first
-            if (_scopeMeasurements != null)
-            {
-                foreach (var kvp in _scopeMeasurements)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-
-            // Override with event-specific measurements
-            if (eventMeasurements != null)
-            {
-                foreach (var kvp in eventMeasurements)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-
-            return merged;
-        }
+            => MergeMeasurementsCore(eventMeasurements);
 
         private Dictionary<string, double> MergeMeasurements(IDictionary<string, double>? eventMeasurements)
+            => MergeMeasurementsCore(eventMeasurements);
+
+        private Dictionary<string, double> MergeMeasurementsCore(IEnumerable<KeyValuePair<string, double>>? eventMeasurements)
         {
             var merged = new Dictionary<string, double>();
 
@@ -169,66 +119,6 @@ namespace Uno.DevTools.Telemetry
             if (eventMeasurements != null)
             {
                 foreach (var kvp in eventMeasurements)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-
-            return merged;
-        }
-
-        private Dictionary<string, string>? MergeScopeProperties(IReadOnlyDictionary<string, string>? newProperties)
-        {
-            if (_scopeProperties == null && newProperties == null)
-            {
-                return null;
-            }
-
-            var merged = new Dictionary<string, string>();
-
-            // Add parent scope properties first
-            if (_scopeProperties != null)
-            {
-                foreach (var kvp in _scopeProperties)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-
-            // Override with new scope properties
-            if (newProperties != null)
-            {
-                foreach (var kvp in newProperties)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-
-            return merged;
-        }
-
-        private Dictionary<string, double>? MergeScopeMeasurements(IReadOnlyDictionary<string, double>? newMeasurements)
-        {
-            if (_scopeMeasurements == null && newMeasurements == null)
-            {
-                return null;
-            }
-
-            var merged = new Dictionary<string, double>();
-
-            // Add parent scope measurements first
-            if (_scopeMeasurements != null)
-            {
-                foreach (var kvp in _scopeMeasurements)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-
-            // Override with new scope measurements
-            if (newMeasurements != null)
-            {
-                foreach (var kvp in newMeasurements)
                 {
                     merged[kvp.Key] = kvp.Value;
                 }

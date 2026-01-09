@@ -85,7 +85,6 @@ public static class TelemetryServiceCollectionExtensions
         public void ThreadBlockingTrackEvent(string eventName, IDictionary<string, string> properties, IDictionary<string, double> measurements) => _inner.ThreadBlockingTrackEvent(eventName, properties, measurements);
         public void TrackEvent(string eventName, (string key, string value)[]? properties, (string key, double value)[]? measurements) => _inner.TrackEvent(eventName, properties, measurements);
         public void TrackEvent(string eventName, IDictionary<string, string>? properties, IDictionary<string, double>? measurements) => _inner.TrackEvent(eventName, properties, measurements);
-        public ITelemetry CreateScope(IReadOnlyDictionary<string, string>? properties = null, IReadOnlyDictionary<string, double>? measurements = null) => _inner.CreateScope(properties, measurements);
         public void TrackException(Exception exception, IReadOnlyDictionary<string, string>? properties = null, IReadOnlyDictionary<string, double>? measurements = null, TelemetrySeverity severity = TelemetrySeverity.Error) => _inner.TrackException(exception, properties, measurements, severity);
     }
 }

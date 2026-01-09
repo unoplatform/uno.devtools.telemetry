@@ -23,18 +23,6 @@ namespace Uno.DevTools.Telemetry
         void TrackEvent(string eventName, IDictionary<string, string>? properties, IDictionary<string, double>? measurements);
 
         /// <summary>
-        /// Creates a new telemetry scope with specified properties and measurements.
-        /// Scopes are nested and merged, with child properties overriding parent properties on key conflicts.
-        /// Scope properties/measurements are applied to all subsequent TrackEvent and TrackException calls within the scope.
-        /// </summary>
-        /// <param name="properties">Optional properties to add to the scope. Will override parent scope values on key conflicts.</param>
-        /// <param name="measurements">Optional measurements to add to the scope. Will override parent scope values on key conflicts.</param>
-        /// <returns>A new telemetry instance with the scoped context applied.</returns>
-        ITelemetry CreateScope(
-            IReadOnlyDictionary<string, string>? properties = null,
-            IReadOnlyDictionary<string, double>? measurements = null);
-
-        /// <summary>
         /// Tracks an exception with optional properties, measurements, and severity.
         /// Properties and measurements from the current scope (if any) are automatically included.
         /// </summary>

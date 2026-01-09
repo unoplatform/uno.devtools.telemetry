@@ -261,32 +261,12 @@ namespace Uno.DevTools.Telemetry
         }
 
         private IDictionary<string, double> GetEventMeasures(IDictionary<string, double>? measurements)
-        {
-            // Start with common measurements
-            var eventMeasurements = new Dictionary<string, double>(_commonMeasurements?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
-                ?? new Dictionary<string, double>(0));
-            
-            // Layer on scope measurements (overrides common)
-            if (_scopeMeasurements != null)
-            {
-                foreach (var measurement in _scopeMeasurements)
-                {
-                    eventMeasurements[measurement.Key] = measurement.Value;
-                }
-            }
-            
-            // Layer on event-specific measurements (overrides scope and common)
-            if (measurements != null)
-            {
-                foreach (var measurement in measurements)
-                {
-                    eventMeasurements[measurement.Key] = measurement.Value;
-                }
-            }
-            return eventMeasurements;
-        }
+            => GetEventMeasuresCore(measurements);
 
         private IDictionary<string, double> GetEventMeasures(IReadOnlyDictionary<string, double>? measurements)
+            => GetEventMeasuresCore(measurements);
+
+        private IDictionary<string, double> GetEventMeasuresCore(IEnumerable<KeyValuePair<string, double>>? measurements)
         {
             // Start with common measurements
             var eventMeasurements = new Dictionary<string, double>(_commonMeasurements?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
@@ -313,33 +293,12 @@ namespace Uno.DevTools.Telemetry
         }
 
         private IDictionary<string, string>? GetEventProperties(IDictionary<string, string>? properties)
-        {
-            // Start with common properties
-            var eventProperties = new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
-                ?? new Dictionary<string, string>(0));
-            
-            // Layer on scope properties (overrides common)
-            if (_scopeProperties != null)
-            {
-                foreach (var property in _scopeProperties)
-                {
-                    eventProperties[property.Key] = property.Value;
-                }
-            }
-            
-            // Layer on event-specific properties (overrides scope and common)
-            if (properties != null)
-            {
-                foreach (var property in properties)
-                {
-                    eventProperties[property.Key] = property.Value;
-                }
-            }
-            
-            return eventProperties.Count > 0 ? eventProperties : null;
-        }
+            => GetEventPropertiesCore(properties);
 
         private IDictionary<string, string>? GetEventProperties(IReadOnlyDictionary<string, string>? properties)
+            => GetEventPropertiesCore(properties);
+
+        private IDictionary<string, string>? GetEventPropertiesCore(IEnumerable<KeyValuePair<string, string>>? properties)
         {
             // Start with common properties
             var eventProperties = new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)

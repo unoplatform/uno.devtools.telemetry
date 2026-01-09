@@ -264,31 +264,12 @@ namespace Uno.DevTools.Telemetry
         }
 
         private Dictionary<string, string>? MergeProperties(IReadOnlyDictionary<string, string>? eventProperties)
-        {
-            if (_scopeProperties == null && eventProperties == null)
-            {
-                return null;
-            }
-
-            var merged = new Dictionary<string, string>();
-            if (_scopeProperties != null)
-            {
-                foreach (var kvp in _scopeProperties)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-            if (eventProperties != null)
-            {
-                foreach (var kvp in eventProperties)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-            return merged.Count > 0 ? merged : null;
-        }
+            => MergePropertiesCore(eventProperties);
 
         private Dictionary<string, string>? MergeProperties(IDictionary<string, string>? eventProperties)
+            => MergePropertiesCore(eventProperties);
+
+        private Dictionary<string, string>? MergePropertiesCore(IEnumerable<KeyValuePair<string, string>>? eventProperties)
         {
             if (_scopeProperties == null && eventProperties == null)
             {
@@ -314,31 +295,12 @@ namespace Uno.DevTools.Telemetry
         }
 
         private Dictionary<string, double>? MergeMeasurements(IReadOnlyDictionary<string, double>? eventMeasurements)
-        {
-            if (_scopeMeasurements == null && eventMeasurements == null)
-            {
-                return null;
-            }
-
-            var merged = new Dictionary<string, double>();
-            if (_scopeMeasurements != null)
-            {
-                foreach (var kvp in _scopeMeasurements)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-            if (eventMeasurements != null)
-            {
-                foreach (var kvp in eventMeasurements)
-                {
-                    merged[kvp.Key] = kvp.Value;
-                }
-            }
-            return merged.Count > 0 ? merged : null;
-        }
+            => MergeMeasurementsCore(eventMeasurements);
 
         private Dictionary<string, double>? MergeMeasurements(IDictionary<string, double>? eventMeasurements)
+            => MergeMeasurementsCore(eventMeasurements);
+
+        private Dictionary<string, double>? MergeMeasurementsCore(IEnumerable<KeyValuePair<string, double>>? eventMeasurements)
         {
             if (_scopeMeasurements == null && eventMeasurements == null)
             {

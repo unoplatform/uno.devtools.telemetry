@@ -5,10 +5,15 @@
 //	- Extracted from dotnet.exe
 // 2024/12/05 (Jerome Laban <jerome@platform.uno>):
 //	- Updated for nullability
+// 2026/01/07 (carldebilly/copilot):
+//	- Added bounded retry policy (2 hours max)
+//	- Added SendLoop exception resilience
+//	- Unknown exceptions now retry with bounded limit
 //
 
 using System;
 using System.Globalization;
+using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Threading;
@@ -177,30 +182,40 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				while (Interlocked.CompareExchange(ref _stopped, 0, 0) == 0)
 				{
-					using (var transmission = _storage.Peek())
+					try
 					{
-						if (Interlocked.CompareExchange(ref _stopped, 0, 0) != 0)
+						using (var transmission = _storage.Peek())
 						{
-							// This second verification is required for cases where 'stopped' was set while peek was happening. 
-							// Once the actual sending starts the design is to wait until it finishes and deletes the transmission. 
-							// So no extra validation is required.
-							break;
-						}
-
-						// If there is a transmission to send - send it. 
-						if (transmission != null)
-						{
-							var shouldRetry = Send(transmission, ref sendingInterval);
-							if (!shouldRetry)
+							if (Interlocked.CompareExchange(ref _stopped, 0, 0) != 0)
 							{
-								// If retry is not required - delete the transmission.
-								_storage.Delete(transmission);
+								// This second verification is required for cases where 'stopped' was set while peek was happening. 
+								// Once the actual sending starts the design is to wait until it finishes and deletes the transmission. 
+								// So no extra validation is required.
+								break;
+							}
+
+							// If there is a transmission to send - send it. 
+							if (transmission != null)
+							{
+								var shouldRetry = Send(transmission, ref sendingInterval);
+								if (!shouldRetry)
+								{
+									// If retry is not required - delete the transmission.
+									_storage.Delete(transmission);
+								}
+							}
+							else
+							{
+								sendingInterval = _sendingIntervalOnNoData;
 							}
 						}
-						else
-						{
-							sendingInterval = _sendingIntervalOnNoData;
-						}
+					}
+					catch (Exception e)
+					{
+						// Guard against any unexpected exceptions in the send loop
+						// Telemetry must never crash the host app
+						PersistenceChannelDebugLog.WriteException(e, "Unexpected exception in send loop");
+						sendingInterval = _sendingIntervalOnNoData; // Reset interval on error
 					}
 
 					LogInterval(prevSendingInterval, sendingInterval);
@@ -230,6 +245,27 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				if (transmission != null)
 				{
+					// Check if we've been retrying for more than MaxRetryDuration (2 hours)
+					if (TryGetTransmissionAge(transmission, out var fileAge))
+					{
+						if (fileAge >= StorageService.MaxRetryDuration)
+						{
+							PersistenceChannelDebugLog.WriteLine(
+								string.Format(CultureInfo.InvariantCulture,
+									"Transmission has exceeded max retry duration ({0}). Dropping file: {1}",
+									StorageService.MaxRetryDuration,
+									transmission.FileName));
+							return false; // Drop the transmission
+						}
+					}
+					else
+					{
+						PersistenceChannelDebugLog.WriteLine(
+							string.Format(CultureInfo.InvariantCulture,
+								"Unable to determine transmission age for file: {0}. Retrying with bounded backoff.",
+								transmission.FileName));
+					}
+					
 					var isConnected = NetworkInterface.GetIsNetworkAvailable();
 
 					// there is no internet connection available, return than.
@@ -254,11 +290,72 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			}
 			catch (Exception e)
 			{
+				// Treat unknown exceptions as potentially transient, but with bounded retry
 				nextSendInterval = CalculateNextInterval(null, nextSendInterval, _maxIntervalBetweenRetries);
 				PersistenceChannelDebugLog.WriteException(e, "Unknown exception during sending");
+				return true; // Retry unknown exceptions
 			}
 
 			return false;
+		}
+		
+		/// <summary>
+		///     Attempts to get the age of a transmission based on the file creation time.
+		///     Falls back to the timestamp encoded in the file name when file metadata is unavailable.
+		/// </summary>
+		private bool TryGetTransmissionAge(StorageTransmission transmission, out TimeSpan age)
+		{
+			age = default;
+
+			try
+			{
+				if (_storage.StorageDirectoryPath is not null && !string.IsNullOrEmpty(transmission.FileName))
+				{
+					var filePath = Path.Combine(_storage.StorageDirectoryPath, transmission.FileName);
+					if (File.Exists(filePath))
+					{
+						var creationTime = File.GetCreationTimeUtc(filePath);
+						age = DateTime.UtcNow - creationTime;
+						return true;
+					}
+				}
+			}
+			catch (Exception e)
+			{
+				PersistenceChannelDebugLog.WriteException(e, "Failed to get transmission age");
+			}
+
+			return TryGetTransmissionAgeFromFileName(transmission.FileName, out age);
+		}
+
+		private static bool TryGetTransmissionAgeFromFileName(in string fileName, out TimeSpan age)
+		{
+			age = default;
+
+			if (string.IsNullOrEmpty(fileName))
+			{
+				return false;
+			}
+
+			var underscoreIndex = fileName.IndexOf('_');
+			if (underscoreIndex <= 0)
+			{
+				return false;
+			}
+
+			var timestampText = fileName.Substring(0, underscoreIndex);
+			if (!DateTime.TryParseExact(
+				timestampText,
+				"yyyyMMddHHmmss",
+				CultureInfo.InvariantCulture,
+				DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+				out var timestamp))
+			{
+				return false;
+			}
+
+			age = DateTime.UtcNow - timestamp;
+			return true;
 		}
 
 		/// <summary>

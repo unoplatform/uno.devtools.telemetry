@@ -5,6 +5,8 @@
 //	- Extracted from dotnet.exe
 // 2024/12/05 (Jerome Laban <jerome@platform.uno>):
 //	- Updated for nullability
+// 2026/01/07 (carldebilly/copilot):
+//	- Added exception handling to prevent serialization exceptions from escaping
 //
 
 using System;
@@ -48,16 +50,25 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		internal void Flush(IChannelTelemetry telemetryItem)
 		{
-			if (telemetryItem != null)
+			try
 			{
-				var data = JsonSerializer.Serialize(new[] { telemetryItem });
-				var transmission = new Transmission(
-					EndpointAddress,
-					data,
-					"application/x-json-stream",
-					JsonSerializer.CompressionType);
+				if (telemetryItem != null)
+				{
+					var data = JsonSerializer.Serialize(new[] { telemetryItem });
+					var transmission = new Transmission(
+						EndpointAddress,
+						data,
+						"application/x-json-stream",
+						JsonSerializer.CompressionType);
 
-				_storage.EnqueueAsync(transmission).ConfigureAwait(false).GetAwaiter().GetResult();
+					_storage.EnqueueAsync(transmission).ConfigureAwait(false).GetAwaiter().GetResult();
+				}
+			}
+			catch (Exception e)
+			{
+				// Guard against serialization and storage exceptions
+				// Telemetry must never crash the host app
+				PersistenceChannelDebugLog.WriteException(e, "Failed to flush telemetry item");
 			}
 		}
 	}

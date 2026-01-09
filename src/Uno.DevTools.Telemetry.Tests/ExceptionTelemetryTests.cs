@@ -101,7 +101,7 @@ namespace Uno.DevTools.Telemetry.Tests
             var exception = new InvalidOperationException("Test exception");
 
             // Act
-            telemetry.TrackException(exception, severity: TelemetrySeverity.Critical);
+            telemetry.TrackException(exception, severity: ExceptionSeverity.Critical);
             telemetry.Flush();
 
             // Assert
@@ -118,11 +118,11 @@ namespace Uno.DevTools.Telemetry.Tests
             var telemetry = new FileTelemetry(filePath, "test");
 
             // Act
-            telemetry.TrackException(new Exception("Critical exception"), severity: TelemetrySeverity.Critical);
-            telemetry.TrackException(new Exception("Error exception"), severity: TelemetrySeverity.Error);
-            telemetry.TrackException(new Exception("Warning exception"), severity: TelemetrySeverity.Warning);
-            telemetry.TrackException(new Exception("Info exception"), severity: TelemetrySeverity.Info);
-            telemetry.TrackException(new Exception("Debug exception"), severity: TelemetrySeverity.Debug);
+            telemetry.TrackException(new Exception("Critical exception"), severity: ExceptionSeverity.Critical);
+            telemetry.TrackException(new Exception("Error exception"), severity: ExceptionSeverity.Error);
+            telemetry.TrackException(new Exception("Warning exception"), severity: ExceptionSeverity.Warning);
+            telemetry.TrackException(new Exception("Info exception"), severity: ExceptionSeverity.Info);
+            telemetry.TrackException(new Exception("Debug exception"), severity: ExceptionSeverity.Debug);
             telemetry.Flush();
 
             // Assert

@@ -4,10 +4,10 @@
 namespace Uno.DevTools.Telemetry
 {
     /// <summary>
-    /// Severity level for telemetry events and exceptions.
+    /// Severity level for exception telemetry.
     /// Maps to Application Insights SeverityLevel for exception telemetry.
     /// </summary>
-    public enum TelemetrySeverity
+    public enum ExceptionSeverity
     {
         /// <summary>
         /// Critical severity - system failures or catastrophic errors.

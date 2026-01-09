@@ -34,6 +34,6 @@ namespace Uno.DevTools.Telemetry
             Exception exception,
             IReadOnlyDictionary<string, string>? properties = null,
             IReadOnlyDictionary<string, double>? measurements = null,
-            TelemetrySeverity severity = TelemetrySeverity.Error);
+            ExceptionSeverity severity = ExceptionSeverity.Error);
     }
 }

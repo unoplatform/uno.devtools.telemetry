@@ -112,6 +112,7 @@ namespace Uno.DevTools.Telemetry
             // 3. Atomically swap _trackEventTask to the new continuation only if it still matches originalTask
             // 4. If another thread changed it, retry with the new value
             // This ensures all events are sent in order, even with concurrent calls.
+            // Note: On single-threaded WASM, there's no concurrent access, so the exchange succeeds immediately.
             while (true)
             {
                 var originalTask = _trackEventTask;
@@ -123,6 +124,7 @@ namespace Uno.DevTools.Telemetry
                 {
                     break;
                 }
+                // Yield to allow other threads to progress. On single-threaded platforms, this is a no-op.
                 Thread.Yield();
             }
         }
@@ -328,7 +330,7 @@ namespace Uno.DevTools.Telemetry
             Exception exception,
             IReadOnlyDictionary<string, string>? properties = null,
             IReadOnlyDictionary<string, double>? measurements = null,
-            TelemetrySeverity severity = TelemetrySeverity.Error)
+            ExceptionSeverity severity = ExceptionSeverity.Error)
         {
             if (!Enabled || _trackEventTask is null || exception == null)
             {
@@ -336,6 +338,7 @@ namespace Uno.DevTools.Telemetry
             }
 
             // Use the same lock-free chaining pattern as TrackEvent
+            // Note: On single-threaded WASM, there's no concurrent access, so the exchange succeeds immediately.
             while (true)
             {
                 var originalTask = _trackEventTask;
@@ -347,6 +350,7 @@ namespace Uno.DevTools.Telemetry
                 {
                     break;
                 }
+                // Yield to allow other threads to progress. On single-threaded platforms, this is a no-op.
                 Thread.Yield();
             }
         }
@@ -355,7 +359,7 @@ namespace Uno.DevTools.Telemetry
             Exception exception,
             IReadOnlyDictionary<string, string>? properties,
             IReadOnlyDictionary<string, double>? measurements,
-            TelemetrySeverity severity)
+            ExceptionSeverity severity)
         {
             if (_client == null)
             {
@@ -369,14 +373,14 @@ namespace Uno.DevTools.Telemetry
 
                 var exceptionTelemetry = new Microsoft.ApplicationInsights.DataContracts.ExceptionTelemetry(exception);
                 
-                // Map TelemetrySeverity to Application Insights SeverityLevel
+                // Map ExceptionSeverity to Application Insights SeverityLevel
                 exceptionTelemetry.SeverityLevel = severity switch
                 {
-                    TelemetrySeverity.Critical => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Critical,
-                    TelemetrySeverity.Error => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Error,
-                    TelemetrySeverity.Warning => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Warning,
-                    TelemetrySeverity.Info => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Information,
-                    TelemetrySeverity.Debug => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Verbose,
+                    ExceptionSeverity.Critical => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Critical,
+                    ExceptionSeverity.Error => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Error,
+                    ExceptionSeverity.Warning => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Warning,
+                    ExceptionSeverity.Info => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Information,
+                    ExceptionSeverity.Debug => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Verbose,
                     _ => Microsoft.ApplicationInsights.DataContracts.SeverityLevel.Error
                 };
 

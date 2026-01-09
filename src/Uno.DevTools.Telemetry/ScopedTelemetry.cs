@@ -25,7 +25,11 @@ namespace Uno.DevTools.Telemetry
 
         public bool Enabled => _inner.Enabled;
 
-        public void Dispose() => _inner.Dispose();
+        public void Dispose()
+        {
+            // Do not dispose the inner telemetry - only the scope itself is disposed.
+            // The inner telemetry may be shared across multiple scopes or used directly.
+        }
 
         public void Flush() => _inner.Flush();
 
@@ -58,7 +62,7 @@ namespace Uno.DevTools.Telemetry
             Exception exception,
             IReadOnlyDictionary<string, string>? properties = null,
             IReadOnlyDictionary<string, double>? measurements = null,
-            TelemetrySeverity severity = TelemetrySeverity.Error)
+            ExceptionSeverity severity = ExceptionSeverity.Error)
         {
             var mergedProperties = MergeProperties(properties);
             var mergedMeasurements = MergeMeasurements(measurements);

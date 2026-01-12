@@ -261,20 +261,12 @@ namespace Uno.DevTools.Telemetry
         }
 
         private IDictionary<string, double> GetEventMeasures(IDictionary<string, double>? measurements)
-        {
-            var eventMeasurements = new Dictionary<string, double>(_commonMeasurements?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
-                ?? new Dictionary<string, double>(0));
-            if (measurements != null)
-            {
-                foreach (var measurement in measurements)
-                {
-                    eventMeasurements[measurement.Key] = measurement.Value;
-                }
-            }
-            return eventMeasurements;
-        }
+            => GetEventMeasuresCore(measurements);
 
         private IDictionary<string, double> GetEventMeasures(IReadOnlyDictionary<string, double>? measurements)
+            => GetEventMeasuresCore(measurements);
+
+        private IDictionary<string, double> GetEventMeasuresCore(IEnumerable<KeyValuePair<string, double>>? measurements)
         {
             var eventMeasurements = new Dictionary<string, double>(_commonMeasurements?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
                 ?? new Dictionary<string, double>(0));
@@ -289,25 +281,12 @@ namespace Uno.DevTools.Telemetry
         }
 
         private IDictionary<string, string>? GetEventProperties(IDictionary<string, string>? properties)
-        {
-            if (properties == null)
-            {
-                return _commonProperties is IDictionary<string, string> commonProperties
-                    ? commonProperties
-                    : new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
-                        ?? new Dictionary<string, string>(0));
-            }
-
-            var eventProperties = new Dictionary<string, string>(_commonProperties?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
-                ?? new Dictionary<string, string>(0));
-            foreach (var property in properties)
-            {
-                eventProperties[property.Key] = property.Value;
-            }
-            return eventProperties;
-        }
+            => GetEventPropertiesCore(properties);
 
         private IDictionary<string, string>? GetEventProperties(IReadOnlyDictionary<string, string>? properties)
+            => GetEventPropertiesCore(properties);
+
+        private IDictionary<string, string>? GetEventPropertiesCore(IEnumerable<KeyValuePair<string, string>>? properties)
         {
             if (properties == null)
             {

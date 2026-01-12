@@ -13,6 +13,9 @@ namespace Uno.DevTools.Telemetry
     /// </summary>
     public sealed class FileTelemetry : ITelemetry
     {
+        private const string TelemetryTypeEvent = "event";
+        private const string TelemetryTypeException = "exception";
+
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
             WriteIndented = false // Use single-line JSON for easier parsing in tests
@@ -122,6 +125,7 @@ namespace Uno.DevTools.Telemetry
 
             var telemetryEvent = new
             {
+                Type = TelemetryTypeEvent,
 #if NET8_0_OR_GREATER
                 Timestamp = _timeProvider.GetLocalNow().DateTime, // Use TimeProvider for testability
 #else
@@ -132,7 +136,45 @@ namespace Uno.DevTools.Telemetry
                 Measurements = measurements
             };
 
-            var json = JsonSerializer.Serialize(telemetryEvent, JsonOptions);
+            WriteToFile(telemetryEvent);
+        }
+
+        public void TrackException(
+            Exception exception,
+            IReadOnlyDictionary<string, string>? properties = null,
+            IReadOnlyDictionary<string, double>? measurements = null,
+            ExceptionSeverity severity = ExceptionSeverity.Error)
+        {
+            if (exception == null)
+            {
+                return;
+            }
+
+            var exceptionEvent = new
+            {
+                Type = TelemetryTypeException,
+#if NET8_0_OR_GREATER
+                Timestamp = _timeProvider.GetLocalNow().DateTime,
+#else
+                Timestamp = DateTime.Now,
+#endif
+                Severity = severity.ToString(),
+                Exception = new
+                {
+                    Type = exception.GetType().FullName,
+                    Message = exception.Message,
+                    StackTrace = exception.StackTrace
+                },
+                Properties = properties,
+                Measurements = measurements
+            };
+
+            WriteToFile(exceptionEvent);
+        }
+
+        private void WriteToFile(object telemetryData)
+        {
+            var json = JsonSerializer.Serialize(telemetryData, JsonOptions);
 
             lock (_lock)
             {

@@ -45,5 +45,9 @@ public record TelemetryAdapter<T> : ITelemetry<T>
         => Inner.TrackEvent(eventName, properties, measurements);
 
     /// <inheritdoc />
+    public void TrackException(Exception exception, IReadOnlyDictionary<string, string>? properties = null, IReadOnlyDictionary<string, double>? measurements = null, ExceptionSeverity severity = ExceptionSeverity.Error)
+        => Inner.TrackException(exception, properties, measurements, severity);
+
+    /// <inheritdoc />
     public bool Enabled => Inner.Enabled;
 }

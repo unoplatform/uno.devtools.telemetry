@@ -21,5 +21,19 @@ namespace Uno.DevTools.Telemetry
         void ThreadBlockingTrackEvent(string eventName, IDictionary<string, string> properties, IDictionary<string, double> measurements);
         void TrackEvent(string eventName, (string key, string value)[]? properties, (string key, double value)[]? measurements);
         void TrackEvent(string eventName, IDictionary<string, string>? properties, IDictionary<string, double>? measurements);
+
+        /// <summary>
+        /// Tracks an exception with optional properties, measurements, and severity.
+        /// Properties and measurements from the current scope (if any) are automatically included.
+        /// </summary>
+        /// <param name="exception">The exception to track.</param>
+        /// <param name="properties">Optional additional properties specific to this exception.</param>
+        /// <param name="measurements">Optional additional measurements specific to this exception.</param>
+        /// <param name="severity">The severity level of the exception. Defaults to Error.</param>
+        void TrackException(
+            Exception exception,
+            IReadOnlyDictionary<string, string>? properties = null,
+            IReadOnlyDictionary<string, double>? measurements = null,
+            ExceptionSeverity severity = ExceptionSeverity.Error);
     }
 }

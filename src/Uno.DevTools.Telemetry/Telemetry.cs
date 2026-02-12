@@ -18,20 +18,7 @@ namespace Uno.DevTools.Telemetry
 {
     public sealed class Telemetry : ITelemetry
     {
-        private static readonly bool IsWasmBrowser = DetectWasmBrowser();
-
-        private static bool DetectWasmBrowser()
-        {
-#if NET5_0_OR_GREATER
-            return OperatingSystem.IsBrowser() || OperatingSystem.IsWasi();
-#else
-            // For netstandard2.0, check RuntimeInformation.OSDescription
-            var osDescription = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
-            return osDescription.Contains("Browser", StringComparison.OrdinalIgnoreCase) ||
-                   osDescription.Contains("WebAssembly", StringComparison.OrdinalIgnoreCase) ||
-                   osDescription.Contains("WASI", StringComparison.OrdinalIgnoreCase);
-#endif
-        }
+        private static readonly bool IsWasmBrowser = PlatformDetection.IsWasmBrowser;
 
         private readonly string? _currentSessionId;
         private TelemetryClient? _client;

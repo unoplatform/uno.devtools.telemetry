@@ -363,10 +363,16 @@ The following are explicitly **not** included in this specification:
    - Caches machine ID to avoid repeated JavaScript calls
    - No reflection, no eval, CSP-compliant
 
+5. **`src/Uno.DevTools.Telemetry/PlatformDetection.cs`**
+   - Shared utility class for platform detection
+   - Centralizes WASM/Browser detection logic
+   - Used by both Telemetry.cs and TelemetryCommonProperties.cs
+   - Eliminates code duplication and provides single source of truth
+
 ### Files Modified
 
 1. **`src/Uno.DevTools.Telemetry/Telemetry.cs`**
-   - Added `IsWasmBrowser` static field for runtime detection
+   - Uses `PlatformDetection.IsWasmBrowser` for runtime detection
    - Added `_wasmSender` field for WASM HTTP sender
    - Modified `InitializeTelemetry()` to branch on WASM vs non-WASM
    - Modified `TrackEventTask()` to use WasmHttpSender on WASM
@@ -374,7 +380,7 @@ The following are explicitly **not** included in this specification:
    - Fixed `Thread.Yield()` calls to skip on WASM
 
 2. **`src/Uno.DevTools.Telemetry/TelemetryCommonProperties.cs`**
-   - Added `IsWasmBrowser` static field
+   - Uses `PlatformDetection.IsWasmBrowser` for runtime detection
    - Modified `GetMachineId()` to use WasmMachineIdHelper for persistent machine ID on WASM
    - Bypasses file I/O and NetworkInterface enumeration on WASM
 

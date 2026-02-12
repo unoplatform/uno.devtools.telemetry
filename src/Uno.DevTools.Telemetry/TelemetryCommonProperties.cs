@@ -28,6 +28,8 @@ namespace Uno.DevTools.Telemetry
 {
     internal sealed class TelemetryCommonProperties
     {
+        private static readonly bool IsWasmBrowser = PlatformDetection.IsWasmBrowser;
+
         public TelemetryCommonProperties(
             string storageDirectoryPath,
             Assembly versionAssembly,
@@ -124,6 +126,14 @@ namespace Uno.DevTools.Telemetry
 
         private string GetMachineId()
         {
+            if (IsWasmBrowser)
+            {
+                // On WASM: Use browser localStorage to persist machine ID across sessions
+                // Falls back to session-specific GUID if localStorage is unavailable
+                return WasmMachineIdHelper.GetOrCreateMachineId();
+            }
+
+            // Non-WASM path: Existing implementation with file I/O
             var machineHashPath = Path.Combine(_storageDirectoryPath, ".machinehash");
 
             if (File.Exists(machineHashPath))

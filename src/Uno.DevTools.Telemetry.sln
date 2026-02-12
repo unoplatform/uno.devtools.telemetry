@@ -17,6 +17,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Files", "Files", "{A7C5A7B2
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Uno.DevTools.Telemetry.Tests", "Uno.DevTools.Telemetry.Tests\Uno.DevTools.Telemetry.Tests.csproj", "{14DF6269-8857-4B00-B93A-79E58BC0B7B0}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Uno.DevTools.Telemetry.WasmTests", "Uno.DevTools.Telemetry.WasmTests", "{C12F0312-E43C-FBA2-D58B-61463C304D03}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Uno.DevTools.Telemetry.WasmTests", "Uno.DevTools.Telemetry.WasmTests\Uno.DevTools.Telemetry.WasmTests\Uno.DevTools.Telemetry.WasmTests.csproj", "{FE61CDE8-8C94-4F20-B6E7-4120521C6680}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -51,9 +55,24 @@ Global
 		{14DF6269-8857-4B00-B93A-79E58BC0B7B0}.Release|x64.Build.0 = Release|Any CPU
 		{14DF6269-8857-4B00-B93A-79E58BC0B7B0}.Release|x86.ActiveCfg = Release|Any CPU
 		{14DF6269-8857-4B00-B93A-79E58BC0B7B0}.Release|x86.Build.0 = Release|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Debug|x64.Build.0 = Debug|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Debug|x86.Build.0 = Debug|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Release|x64.ActiveCfg = Release|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Release|x64.Build.0 = Release|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Release|x86.ActiveCfg = Release|Any CPU
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FE61CDE8-8C94-4F20-B6E7-4120521C6680} = {C12F0312-E43C-FBA2-D58B-61463C304D03}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {61360D76-7CDA-40DE-B87B-383F28CF50BF}

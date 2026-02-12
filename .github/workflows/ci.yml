@@ -22,6 +22,14 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Run uno-check (wasm)
+      run: |
+        dotnet tool install --global uno.check
+        uno-check -v --ci --non-interactive --fix `
+          --skip xcode --skip gtk3 --skip vswin --skip vswinworkloads --skip unosdk `
+          --skip dotnetnewunotemplates --skip vsmac --skip androidsdk --skip openjdk --skip androidemulator `
+          --tfm net10.0-browserwasm
+
     - uses: dotnet/nbgv@f088059084cb5d872e9d1a994433ca6440c2bf72 # v0.4.2
       with:
         toolVersion: 3.6.139
@@ -61,6 +69,66 @@ jobs:
         name: Unit Tests
         path: artifacts/test-results/*.trx
         reporter: dotnet-trx
+
+  # WebAssembly Runtime Tests
+  # Tests telemetry functionality in actual browser environment using Uno.UI.RuntimeTests.Engine
+  # Follows official guide: https://github.com/unoplatform/uno.ui.runtimetests.engine
+  wasm-tests:
+    name: WASM Runtime Tests
+    runs-on: ubuntu-latest
+    if: true  # Enabled - tests are now working
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Run uno-check (wasm)
+      run: |
+        dotnet tool install --global uno.check
+        uno-check -v --ci --non-interactive --fix \
+          --skip xcode --skip gtk3 --skip vswin --skip vswinworkloads --skip unosdk \
+          --skip dotnetnewunotemplates --skip vsmac --skip androidsdk --skip openjdk --skip androidemulator \
+          --tfm net10.0-browserwasm
+
+    - name: Install Uno.UI.RuntimeTests.Engine.Wasm.Runner
+      run: dotnet tool install -g Uno.UI.RuntimeTests.Engine.Wasm.Runner --version 2.0.0-dev.37
+
+    - name: Install Chromium via Playwright
+      run: npx playwright install chromium
+
+    - name: Publish WASM Test Project
+      run: |
+        cd src/Uno.DevTools.Telemetry.WasmTests/Uno.DevTools.Telemetry.WasmTests
+        # Disable trimming as required by RuntimeTests.Engine (uses reflection for test discovery)
+        dotnet publish -c Release -f net10.0-browserwasm -p:PublishTrimmed=false -o ./publish
+
+    - name: Run WASM Runtime Tests
+      run: |
+        cd src/Uno.DevTools.Telemetry.WasmTests/Uno.DevTools.Telemetry.WasmTests
+        # Run tests using the official Uno.UI.RuntimeTests.Engine.Wasm.Runner tool
+        uno-runtimetests-wasm --app-path ./publish/wwwroot --output ./wasm-test-results.xml --timeout 300
+
+    - name: Upload WASM Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: wasm-test-results
+        path: src/Uno.DevTools.Telemetry.WasmTests/Uno.DevTools.Telemetry.WasmTests/wasm-test-results.xml
+
+    - name: Publish WASM Test Results
+      uses: dorny/test-reporter@v2
+      if: always()
+      with:
+        name: WASM Tests
+        path: src/Uno.DevTools.Telemetry.WasmTests/Uno.DevTools.Telemetry.WasmTests/wasm-test-results.xml
+        reporter: dotnet-nunit
 
   sign:
     name: Sign Package

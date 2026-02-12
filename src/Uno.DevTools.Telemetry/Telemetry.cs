@@ -12,11 +12,14 @@ using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.DotNet.PlatformAbstractions;
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace Uno.DevTools.Telemetry
 {
     public sealed class Telemetry : ITelemetry
     {
+        private static readonly bool IsWasmBrowser = PlatformDetection.IsWasmBrowser;
+
         private readonly string? _currentSessionId;
         private TelemetryClient? _client;
         // These collections must be treated as immutable after construction.
@@ -28,6 +31,7 @@ namespace Uno.DevTools.Telemetry
         private string? _storageDirectoryPath;
         private string? _settingsStorageDirectoryPath;
         private PersistenceChannel.PersistenceChannel? _persistenceChannel;
+        private WasmHttpSender? _wasmSender;
         private readonly string _instrumentationKey;
         private readonly string _eventNamePrefix;
         private readonly Assembly _versionAssembly;
@@ -124,8 +128,11 @@ namespace Uno.DevTools.Telemetry
                 {
                     break;
                 }
-                // Yield to allow other threads to progress. On single-threaded platforms, this is a no-op.
-                Thread.Yield();
+                // Yield to allow other threads to progress. Skip on WASM where it's not needed.
+                if (!IsWasmBrowser)
+                {
+                    Thread.Yield();
+                }
             }
         }
 
@@ -184,10 +191,31 @@ namespace Uno.DevTools.Telemetry
         {
             try
             {
+                if (IsWasmBrowser)
+                {
+                    // WASM path: Don't initialize Application Insights SDK (would fail)
+                    // Use direct HTTP sender instead
+                    _wasmSender = new WasmHttpSender(_instrumentationKey, _eventNamePrefix);
+
+                    // Get WASM-compatible common properties (no file I/O)
+                    _commonProperties = new TelemetryCommonProperties(
+                        storageDirectoryPath: "wasm-no-storage",
+                        _versionAssembly,
+                        _productName ?? _versionAssembly.GetName().Name ?? "Unknown",
+                        _currentDirectoryProvider
+                        ).GetTelemetryCommonProperties();
+                    _commonMeasurements = new Dictionary<string, double>();
+
+                    // Use session-specific machine ID on WASM (no persistent storage)
+                    _machineIdTcs.TrySetResult(_commonProperties[TelemetryCommonProperties.MachineId]);
+                    return;
+                }
+
+                // Non-WASM path: Existing implementation unchanged
                 _storageDirectoryPath = Path.Combine(Path.GetTempPath(), ".uno", "telemetry");
 
                 // Store the settings on in the user profile for linux
-                if (RuntimeEnvironment.OperatingSystemPlatform == Platform.Linux)
+                if (Microsoft.DotNet.PlatformAbstractions.RuntimeEnvironment.OperatingSystemPlatform == Platform.Linux)
                 {
                     _settingsStorageDirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".uno", "telemetry");
                 }
@@ -219,13 +247,14 @@ namespace Uno.DevTools.Telemetry
                 _client.InstrumentationKey = _instrumentationKey;
                 _client.Context.User.Id = _commonProperties[TelemetryCommonProperties.MachineId];
                 _client.Context.Session.Id = _currentSessionId;
-                _client.Context.Device.OperatingSystem = RuntimeEnvironment.OperatingSystem;
+                _client.Context.Device.OperatingSystem = Microsoft.DotNet.PlatformAbstractions.RuntimeEnvironment.OperatingSystem;
 
                 _machineIdTcs.TrySetResult(_client.Context.User.Id);
             }
             catch (Exception e)
             {
                 _client = null;
+                _wasmSender = null;
                 _machineIdTcs.TrySetResult(null);
                 // we don't want to fail the tool if telemetry fails.
                 Debug.Fail(e.ToString());
@@ -237,6 +266,28 @@ namespace Uno.DevTools.Telemetry
             IDictionary<string, string>? properties,
             IDictionary<string, double>? measurements)
         {
+            if (IsWasmBrowser && _wasmSender != null)
+            {
+                // WASM path: Use HTTP sender
+                try
+                {
+                    var eventProperties = GetEventProperties(properties);
+                    var eventMeasurements = GetEventMeasures(measurements);
+                    _ = _wasmSender.SendEventAsync(
+                        eventName,
+                        eventProperties,
+                        eventMeasurements,
+                        _commonProperties![TelemetryCommonProperties.MachineId],
+                        _currentSessionId);
+                }
+                catch (Exception e)
+                {
+                    Debug.Fail(e.ToString());
+                }
+                return;
+            }
+
+            // Non-WASM path: Existing implementation
             if (_client == null)
             {
                 return;
@@ -329,8 +380,11 @@ namespace Uno.DevTools.Telemetry
                 {
                     break;
                 }
-                // Yield to allow other threads to progress. On single-threaded platforms, this is a no-op.
-                Thread.Yield();
+                // Yield to allow other threads to progress. Skip on WASM where it's not needed.
+                if (!IsWasmBrowser)
+                {
+                    Thread.Yield();
+                }
             }
         }
 
@@ -340,6 +394,29 @@ namespace Uno.DevTools.Telemetry
             IReadOnlyDictionary<string, double>? measurements,
             ExceptionSeverity severity)
         {
+            if (IsWasmBrowser && _wasmSender != null)
+            {
+                // WASM path: Use HTTP sender
+                try
+                {
+                    var eventProperties = GetEventProperties(properties);
+                    var eventMeasurements = GetEventMeasures(measurements);
+                    _ = _wasmSender.SendExceptionAsync(
+                        exception,
+                        severity,
+                        eventProperties,
+                        eventMeasurements,
+                        _commonProperties![TelemetryCommonProperties.MachineId],
+                        _currentSessionId);
+                }
+                catch (Exception e)
+                {
+                    Debug.Fail(e.ToString());
+                }
+                return;
+            }
+
+            // Non-WASM path: Existing implementation
             if (_client == null)
             {
                 return;
@@ -351,7 +428,7 @@ namespace Uno.DevTools.Telemetry
                 var eventMeasurements = GetEventMeasures(measurements);
 
                 var exceptionTelemetry = new Microsoft.ApplicationInsights.DataContracts.ExceptionTelemetry(exception);
-                
+
                 // Map ExceptionSeverity to Application Insights SeverityLevel
                 exceptionTelemetry.SeverityLevel = severity switch
                 {

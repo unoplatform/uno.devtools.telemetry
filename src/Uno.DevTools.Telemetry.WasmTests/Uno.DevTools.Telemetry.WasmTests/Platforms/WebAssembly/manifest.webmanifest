@@ -1,0 +1,10 @@
+{
+  "background_color": "#ffffff",
+  "description": "Uno.DevTools.Telemetry.WasmTests",
+  "display": "standalone",
+  "name": "Uno.DevTools.Telemetry.WasmTests",
+  "short_name": "Uno.DevTools.Telemetry.WasmTests",
+  "start_url": "/index.html",
+  "theme_color": "#ffffff",
+  "scope": "/"
+}

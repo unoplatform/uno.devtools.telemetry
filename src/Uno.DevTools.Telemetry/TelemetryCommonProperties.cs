@@ -28,6 +28,21 @@ namespace Uno.DevTools.Telemetry
 {
     internal sealed class TelemetryCommonProperties
     {
+        private static readonly bool IsWasmBrowser = DetectWasmBrowser();
+
+        private static bool DetectWasmBrowser()
+        {
+#if NET5_0_OR_GREATER
+            return OperatingSystem.IsBrowser() || OperatingSystem.IsWasi();
+#else
+            // For netstandard2.0, check RuntimeInformation.OSDescription
+            var osDescription = RuntimeInformation.OSDescription;
+            return osDescription.Contains("Browser", StringComparison.OrdinalIgnoreCase) ||
+                   osDescription.Contains("WebAssembly", StringComparison.OrdinalIgnoreCase) ||
+                   osDescription.Contains("WASI", StringComparison.OrdinalIgnoreCase);
+#endif
+        }
+
         public TelemetryCommonProperties(
             string storageDirectoryPath,
             Assembly versionAssembly,
@@ -124,6 +139,15 @@ namespace Uno.DevTools.Telemetry
 
         private string GetMachineId()
         {
+            if (IsWasmBrowser)
+            {
+                // On WASM: no file system, no network interfaces
+                // Generate a session-specific GUID for machine ID
+                // This ensures each session has a unique identifier
+                return Guid.NewGuid().ToString();
+            }
+
+            // Non-WASM path: Existing implementation with file I/O
             var machineHashPath = Path.Combine(_storageDirectoryPath, ".machinehash");
 
             if (File.Exists(machineHashPath))

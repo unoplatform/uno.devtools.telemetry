@@ -113,6 +113,80 @@ Uno.DevTools.Telemetry targets:
 
 All features are available on .NET 8+; some features (like testable time via `TimeProvider`) are not available on netstandard2.0 and will fallback to system time.
 
+## WebAssembly Support
+
+Uno.DevTools.Telemetry fully supports WebAssembly (WASM) environments, including Uno Platform applications running in the browser.
+
+### How it Works
+
+When running on WebAssembly, the telemetry library automatically detects the WASM/browser environment and:
+- Bypasses the Application Insights SDK (which is incompatible with WASM due to threading and file I/O dependencies)
+- Uses a lightweight HTTP-based sender to communicate directly with the Application Insights REST API
+- Provides the same API surface as other platforms - no code changes needed
+
+### Key Characteristics on WASM
+
+| Aspect | WASM Behavior | Other Platforms |
+|--------|---------------|-----------------|
+| **API** | Identical - same methods and signatures | Same |
+| **Machine ID** | Session-specific GUID (regenerated each page load) | Persistent hash based on MAC address |
+| **Persistence** | In-memory only (lost on page refresh) | File-based persistence with retry |
+| **Performance** | Direct HTTP POST to Application Insights | Application Insights SDK with batching |
+| **Threading** | Single-threaded (no `Thread.Yield()`) | Multi-threaded with lock-free chaining |
+
+### Usage on WASM
+
+No special configuration is required! Use the same initialization code as other platforms:
+
+```csharp
+// This works identically on WASM and all other platforms
+services.AddTelemetry(
+    instrumentationKey: "<your-app-insights-key>",
+    eventNamePrefix: "MyWasmApp",
+    versionAssembly: typeof(App).Assembly
+);
+
+// Track events the same way
+telemetry.TrackEvent("PageViewed", new[] { ("Page", "Home") }, null);
+telemetry.TrackException(exception, severity: ExceptionSeverity.Error);
+```
+
+### Limitations on WASM
+
+- **No persistent storage**: The machine ID is regenerated on each page load since there's no file system access in the browser. This means each browser session gets a unique ID.
+- **Network-dependent**: Telemetry requires network connectivity to send events to Application Insights. Failed requests are silently dropped to prevent app crashes.
+- **No offline queue**: Unlike other platforms, WASM does not persist unsent telemetry between sessions.
+
+### Environment Variables
+
+The `UNO_PLATFORM_TELEMETRY_OPTOUT` environment variable works on WASM just like other platforms:
+
+```csharp
+// Set before app initialization to disable telemetry
+Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT", "true");
+```
+
+### Testing WASM Telemetry
+
+To verify telemetry is working in your WASM app:
+
+1. **Open Browser DevTools** (F12)
+2. **Network Tab**: Look for POST requests to `https://dc.services.visualstudio.com/v2/track`
+3. **Console Tab**: Check for any telemetry-related errors (should be none)
+4. **Application Insights Portal**: Events should appear within a few minutes with:
+   - OS: "Browser"
+   - OS Version: "WebAssembly"
+   - Session-specific User ID
+
+### Implementation Details
+
+The WASM implementation:
+- Detects the browser environment using `RuntimeInformation.IsOSPlatform(OSPlatform.Create("BROWSER"))`
+- Sends telemetry payloads that match the Application Insights v2 REST API schema
+- Uses `System.Text.Json` for serialization (no additional dependencies)
+- Handles network failures gracefully without crashing the app
+- Supports CORS out-of-the-box (Application Insights endpoint has CORS enabled)
+
 ---
 
 *For more details, see the code and comments in the repository.*

@@ -25,9 +25,9 @@ jobs:
     - name: Run uno-check (wasm)
       run: |
         dotnet tool install --global uno.check
-        uno-check -v --ci --non-interactive --fix \
-          --skip xcode --skip gtk3 --skip vswin --skip vswinworkloads --skip unosdk \
-          --skip dotnetnewunotemplates --skip vsmac --skip androidsdk --skip openjdk --skip androidemulator \
+        uno-check -v --ci --non-interactive --fix `
+          --skip xcode --skip gtk3 --skip vswin --skip vswinworkloads --skip unosdk `
+          --skip dotnetnewunotemplates --skip vsmac --skip androidsdk --skip openjdk --skip androidemulator `
           --tfm net10.0-browserwasm
 
     - uses: dotnet/nbgv@f088059084cb5d872e9d1a994433ca6440c2bf72 # v0.4.2
@@ -92,9 +92,9 @@ jobs:
     - name: Run uno-check (wasm)
       run: |
         dotnet tool install --global uno.check
-        uno-check -v --ci --non-interactive --fix `
-          --skip xcode --skip gtk3 --skip vswin --skip vswinworkloads --skip unosdk `
-          --skip dotnetnewunotemplates --skip vsmac --skip androidsdk --skip openjdk --skip androidemulator `
+        uno-check -v --ci --non-interactive --fix \
+          --skip xcode --skip gtk3 --skip vswin --skip vswinworkloads --skip unosdk \
+          --skip dotnetnewunotemplates --skip vsmac --skip androidsdk --skip openjdk --skip androidemulator \
           --tfm net10.0-browserwasm
 
     - name: Install Uno.UI.RuntimeTests.Engine.Wasm.Runner

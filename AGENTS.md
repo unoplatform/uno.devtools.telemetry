@@ -149,7 +149,7 @@ Runs on Ubuntu, follows these steps:
 
 ```yaml
 # Install CLI tool
-dotnet tool install -g Uno.UI.RuntimeTests.Engine.Wasm.Runner
+dotnet tool install -g Uno.UI.RuntimeTests.Engine.Wasm.Runner --prerelease
 
 # Install browser
 npx playwright install chromium

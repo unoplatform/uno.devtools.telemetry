@@ -4,6 +4,10 @@
 		<TargetFrameworks>netstandard2.0;net8.0;net9.0</TargetFrameworks>
 		<LangVersion>latest</LangVersion>
 	</PropertyGroup>
+
+	<PropertyGroup Condition=" '$(TargetFramework)' == 'net8.0' OR '$(TargetFramework)' == 'net9.0' ">
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
 	
 	<!-- netstandard2.0 builds are strong-named; keep InternalsVisibleTo out to avoid requiring a signed test assembly. -->
 	<ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.0'">
@@ -39,5 +43,9 @@
 	<ItemGroup Condition=" '$(TargetFramework)' == 'netstandard2.0' ">
 		<PackageReference Include="System.Text.Json" />
 	</ItemGroup>
-	
+
+	<ItemGroup>
+		<EmbeddedResource Include="WasmScript\machineId.js" />
+	</ItemGroup>
+
 </Project>

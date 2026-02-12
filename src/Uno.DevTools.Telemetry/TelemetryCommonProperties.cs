@@ -141,10 +141,9 @@ namespace Uno.DevTools.Telemetry
         {
             if (IsWasmBrowser)
             {
-                // On WASM: no file system, no network interfaces
-                // Generate a session-specific GUID for machine ID
-                // This ensures each session has a unique identifier
-                return Guid.NewGuid().ToString();
+                // On WASM: Use browser localStorage to persist machine ID across sessions
+                // Falls back to session-specific GUID if localStorage is unavailable
+                return WasmMachineIdHelper.GetOrCreateMachineId();
             }
 
             // Non-WASM path: Existing implementation with file I/O

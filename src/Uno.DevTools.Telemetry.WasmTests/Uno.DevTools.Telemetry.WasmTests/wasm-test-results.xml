@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="7294e295-3ef1-4922-937c-f99082d5c1da" name="Runtime Tests" testcasecount="8" result="Passed" time="0" total="8" errors="0" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0" run-date="2026-02-12" start-time="15:41:22" end-time="15:41:22">
+  <test-suite type="Assembly" name="Uno.DevTools.Telemetry.WasmTests">
+    <environment machine-name="localhost" platform="n/a" />
+    <test-suite type="TestFixture" name="7294e295-3ef1-4922-937c-f99082d5c1da" executed="true" testcasecount="8" result="Passed" time="0" total="8" errors="0" passed="8" failed="0" inconclusive="0" skipped="0" asserts="0">
+      <test-case name="Telemetry_InitializesOnWasm_WithoutErrors()" fullname="Telemetry_InitializesOnWasm_WithoutErrors()" duration="0.073425" time="0" result="Passed" />
+      <test-case name="Telemetry_TrackEvent_OnWasm_DoesNotThrow()" fullname="Telemetry_TrackEvent_OnWasm_DoesNotThrow()" duration="0.00082" time="0" result="Passed" />
+      <test-case name="Telemetry_TrackException_OnWasm_DoesNotThrow()" fullname="Telemetry_TrackException_OnWasm_DoesNotThrow()" duration="0.000585" time="0" result="Passed" />
+      <test-case name="Telemetry_FlushAsync_OnWasm_CompletesSuccessfully()" fullname="Telemetry_FlushAsync_OnWasm_CompletesSuccessfully()" duration="0.008065" time="0" result="Passed" />
+      <test-case name="Telemetry_DisabledViaEnvironmentVariable_OnWasm()" fullname="Telemetry_DisabledViaEnvironmentVariable_OnWasm()" duration="0.0014899" time="0" result="Passed" />
+      <test-case name="Telemetry_MultipleEvents_OnWasm_DoesNotCauseThreadingIssues()" fullname="Telemetry_MultipleEvents_OnWasm_DoesNotCauseThreadingIssues()" duration="0.001415" time="0" result="Passed" />
+      <test-case name="Telemetry_AllExceptionSeverities_OnWasm()" fullname="Telemetry_AllExceptionSeverities_OnWasm()" duration="0.0003949" time="0" result="Passed" />
+      <test-case name="Telemetry_ThreadBlockingTrackEvent_OnWasm()" fullname="Telemetry_ThreadBlockingTrackEvent_OnWasm()" duration="0.00034" time="0" result="Passed" />
+    </test-suite>
+  </test-suite>
+</test-run>

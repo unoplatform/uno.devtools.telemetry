@@ -14,6 +14,19 @@ public class TelemetryWasmTests
 		Environment.GetEnvironmentVariable("UNO_TEST_APPINSIGHTS_KEY")
 		?? "00000000-0000-0000-0000-000000000000";
 	private const string TestEventPrefix = "WasmTest";
+	private string? _telemetryOptOutOriginal;
+	private bool _telemetryOptOutTouched;
+
+	[TestCleanup]
+	public void Cleanup()
+	{
+		if (_telemetryOptOutTouched)
+		{
+			Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT", _telemetryOptOutOriginal);
+			_telemetryOptOutTouched = false;
+			_telemetryOptOutOriginal = null;
+		}
+	}
 
 	[TestMethod]
 	public async Task Telemetry_InitializesOnWasm_WithoutErrors()
@@ -102,25 +115,19 @@ public class TelemetryWasmTests
 	public void Telemetry_DisabledViaEnvironmentVariable_OnWasm()
 	{
 		// Arrange
+		_telemetryOptOutOriginal = Environment.GetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT");
+		_telemetryOptOutTouched = true;
 		Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT", "true");
 
-		try
-		{
-			// Act
-			var telemetry = new Telemetry(
-				instrumentationKey: TestInstrumentationKey,
-				eventNamePrefix: TestEventPrefix,
-				versionAssembly: typeof(TelemetryWasmTests).Assembly
-			);
+		// Act
+		var telemetry = new Telemetry(
+			instrumentationKey: TestInstrumentationKey,
+			eventNamePrefix: TestEventPrefix,
+			versionAssembly: typeof(TelemetryWasmTests).Assembly
+		);
 
-			// Assert
-			Assert.IsFalse(telemetry.Enabled, "Telemetry should be disabled");
-		}
-		finally
-		{
-			// Cleanup
-			Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT", null);
-		}
+		// Assert
+		Assert.IsFalse(telemetry.Enabled, "Telemetry should be disabled");
 	}
 
 	[TestMethod]

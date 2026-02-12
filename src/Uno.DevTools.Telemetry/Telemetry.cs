@@ -212,7 +212,7 @@ namespace Uno.DevTools.Telemetry
 
                     // Get WASM-compatible common properties (no file I/O)
                     _commonProperties = new TelemetryCommonProperties(
-                        storageDirectoryPath: null!, // Not used on WASM
+                        storageDirectoryPath: "wasm-no-storage",
                         _versionAssembly,
                         _productName ?? _versionAssembly.GetName().Name ?? "Unknown",
                         _currentDirectoryProvider

@@ -22,6 +22,7 @@ namespace Uno.DevTools.Telemetry
 	/// </summary>
 	internal sealed class WasmHttpSender
 	{
+		// Static HttpClient is intentional: reuse a single handler per app instance.
 		private static readonly HttpClient HttpClient = new();
 		private const string EndpointUrl = "https://dc.services.visualstudio.com/v2/track";
 
@@ -41,16 +42,8 @@ namespace Uno.DevTools.Telemetry
 			string machineId,
 			string? sessionId)
 		{
-			try
-			{
-				var envelope = CreateEventEnvelope(eventName, properties, measurements, machineId, sessionId);
-				await SendAsync(envelope);
-			}
-			catch (Exception ex)
-			{
-				// Telemetry failures should not crash the app
-				Debug.WriteLine($"WASM telemetry event send failed: {ex.Message}");
-			}
+			var envelope = CreateEventEnvelope(eventName, properties, measurements, machineId, sessionId);
+			await SendAsync(envelope);
 		}
 
 		public async Task SendExceptionAsync(
@@ -61,16 +54,8 @@ namespace Uno.DevTools.Telemetry
 			string machineId,
 			string? sessionId)
 		{
-			try
-			{
-				var envelope = CreateExceptionEnvelope(exception, severity, properties, measurements, machineId, sessionId);
-				await SendAsync(envelope);
-			}
-			catch (Exception ex)
-			{
-				// Telemetry failures should not crash the app
-				Debug.WriteLine($"WASM telemetry exception send failed: {ex.Message}");
-			}
+			var envelope = CreateExceptionEnvelope(exception, severity, properties, measurements, machineId, sessionId);
+			await SendAsync(envelope);
 		}
 
 		private object CreateEventEnvelope(
@@ -163,20 +148,27 @@ namespace Uno.DevTools.Telemetry
 			try
 			{
 				var json = JsonSerializer.Serialize(envelope);
-				var content = new StringContent(json, Encoding.UTF8, "application/json");
-				var response = await HttpClient.PostAsync(EndpointUrl, content);
+				using var content = new StringContent(json, Encoding.UTF8, "application/json");
+				using var response = await HttpClient.PostAsync(EndpointUrl, content).ConfigureAwait(false);
 				response.EnsureSuccessStatusCode();
 			}
 			catch (HttpRequestException ex)
 			{
 				// Network failures should not crash the app
-				Debug.WriteLine($"WASM telemetry HTTP request failed: {ex.Message}");
+				LogFailure("WASM telemetry HTTP request failed", ex);
 			}
 			catch (Exception ex)
 			{
 				// Any other failures should not crash the app
-				Debug.WriteLine($"WASM telemetry send failed: {ex.Message}");
+				LogFailure("WASM telemetry send failed", ex);
 			}
+		}
+
+		private static void LogFailure(string message, Exception exception)
+		{
+			var logMessage = $"{message}: {exception.Message}";
+			Debug.WriteLine(logMessage);
+			Trace.WriteLine(logMessage);
 		}
 
 		private string PrependProducerNamespace(string eventName)

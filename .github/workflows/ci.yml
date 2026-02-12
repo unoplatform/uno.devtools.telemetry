@@ -92,9 +92,9 @@ jobs:
     - name: Run uno-check (wasm)
       run: |
         dotnet tool install --global uno.check
-        uno-check -v --ci --non-interactive --fix \
-          --skip xcode --skip gtk3 --skip vswin --skip vswinworkloads --skip unosdk \
-          --skip dotnetnewunotemplates --skip vsmac --skip androidsdk --skip openjdk --skip androidemulator \
+        uno-check -v --ci --non-interactive --fix `
+          --skip xcode --skip gtk3 --skip vswin --skip vswinworkloads --skip unosdk `
+          --skip dotnetnewunotemplates --skip vsmac --skip androidsdk --skip openjdk --skip androidemulator `
           --tfm net10.0-browserwasm
 
     - name: Install Uno.UI.RuntimeTests.Engine.Wasm.Runner
@@ -128,7 +128,7 @@ jobs:
       with:
         name: WASM Tests
         path: src/Uno.DevTools.Telemetry.WasmTests/Uno.DevTools.Telemetry.WasmTests/wasm-test-results.xml
-        reporter: java-junit
+        reporter: dotnet-nunit
 
   sign:
     name: Sign Package

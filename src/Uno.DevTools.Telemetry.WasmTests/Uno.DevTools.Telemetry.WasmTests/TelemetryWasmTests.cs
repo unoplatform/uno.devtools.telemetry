@@ -9,7 +9,10 @@ namespace Uno.DevTools.Telemetry.WasmTests;
 [TestClass]
 public class TelemetryWasmTests
 {
-	private const string TestInstrumentationKey = "00000000-0000-0000-0000-000000000000";
+	// Read from environment variable (for CI/integration testing), fallback to dummy key for local testing
+	private static readonly string TestInstrumentationKey =
+		Environment.GetEnvironmentVariable("UNO_TEST_APPINSIGHTS_KEY")
+		?? "00000000-0000-0000-0000-000000000000";
 	private const string TestEventPrefix = "WasmTest";
 
 	[TestMethod]

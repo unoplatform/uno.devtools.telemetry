@@ -26,6 +26,28 @@ dotnet tool install -g Uno.UI.RuntimeTests.Engine.Wasm.Runner --prerelease
 npx playwright install chromium
 ```
 
+### Optional: Configure Real Application Insights Key
+
+By default, WASM tests use a dummy instrumentation key (`00000000-0000-0000-0000-000000000000`) for testing. This validates that the code works without sending real telemetry.
+
+**To test with a real Application Insights instance:**
+
+1. Set the environment variable with your test Application Insights instrumentation key:
+   ```bash
+   export UNO_TEST_APPINSIGHTS_KEY="your-real-instrumentation-key-here"
+   ```
+
+2. Run tests normally - they will now send telemetry to your Application Insights instance
+
+3. Verify events appear in the Application Insights portal
+
+**Use cases:**
+- Integration testing with real backend
+- Validating telemetry actually arrives at Application Insights
+- Testing with production-like configuration
+
+**Note:** The dummy key is sufficient for most development and CI testing, as tests validate code execution, not server-side telemetry arrival.
+
 ## Running Unit Tests
 
 ### Run all unit tests
@@ -161,7 +183,7 @@ dotnet publish -c Release -f net10.0-browserwasm -p:PublishTrimmed=false -o ./pu
 # Run tests
 uno-runtimetests-wasm --app-path ./publish/wwwroot --output ./wasm-test-results.xml --timeout 300
 
-# Upload results (using dorny/test-reporter@v2 with java-junit reporter)
+# Upload results (using dorny/test-reporter@v2 with dotnet-nunit reporter)
 ```
 
 ### Viewing CI Results

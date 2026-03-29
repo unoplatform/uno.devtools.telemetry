@@ -84,6 +84,9 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Free disk space (Linux)
+      uses: ./.github/actions/host-cleanup-linux
+
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:

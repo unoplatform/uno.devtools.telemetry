@@ -46,6 +46,12 @@ jobs:
         name: NuGet
         path: .\artifacts
 
+    - name: Add NuGet Summary
+      shell: pwsh
+      run: |
+        echo "### NuGet Package Summary" >> $env:GITHUB_STEP_SUMMARY
+        echo "Package version: $env:NBGV_SemVer2" >> $env:GITHUB_STEP_SUMMARY
+
     - name: Create Test Results Directory
       shell: pwsh
       run: New-Item -ItemType Directory -Force -Path artifacts/test-results

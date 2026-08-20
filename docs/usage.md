@@ -73,6 +73,35 @@ telemetry.TrackEvent("UserAction", new Dictionary<string, string> { { "Action", 
 > When using `ITelemetry` (including `FileTelemetry` or any implementation), do not modify any dictionary or list after passing it as a parameter to telemetry methods (such as `TrackEvent`).
 > All collections passed to telemetry should be considered owned by the telemetry system and must not be mutated by the caller after the call. Mutating collections after passing them may cause race conditions or undefined behavior.
 
+### Authenticated User Attribution
+
+When your application has a signed-in user, you can attribute telemetry to that account:
+
+```csharp
+// On sign-in
+telemetry.AuthenticatedUserId = accountId;
+
+// On sign-out
+telemetry.AuthenticatedUserId = null;
+```
+
+The value is emitted as the Application Insights-native `ai.user.authUserId` context tag and
+surfaces as the `user_AuthenticatedId` column in analytics — separate from, and in addition to,
+the anonymous machine id (`user_Id`). The same value can also be read or written through the
+static `TelemetryUserContext.AuthenticatedUserId` property without an `ITelemetry` instance.
+
+> [!WARNING]
+> The authenticated user id is **process-wide ambient state**: setting it through any `ITelemetry`
+> instance affects every instance in the process, including instances created later (e.g. typed
+> `ITelemetry<T>` instances resolved from DI). This is by design — the id identifies the user, not
+> the telemetry instance.
+
+Notes:
+- Null, empty, or whitespace values are normalized to `null`; the tag is then omitted entirely,
+  never sent empty.
+- Only send an opaque account identifier appropriate for your consent and privacy posture — never
+  an email address or display name.
+
 ### File-based Telemetry
 By default, telemetry is persisted locally before being sent. You can configure the storage location and behavior by customizing the `Telemetry` constructor.
 
@@ -81,6 +110,7 @@ By default, telemetry is persisted locally before being sent. You can configure 
 | --- | --- |
 | `UNO_PLATFORM_TELEMETRY_OPTOUT` | Set to `true` to disable telemetry. |
 | `UNO_PLATFORM_TELEMETRY_FILE` | When set, telemetry is logged to the specified file path using `FileTelemetry` instead of Application Insights. On .NET 8+, FileTelemetry uses `TimeProvider` for testable timestamps; on .NET Standard 2.0, it falls back to system time. |
+| `UNO_PLATFORM_TELEMETRY_AUTHENTICATED_USER_ID` | Seeds the initial authenticated user id (read once at first use), allowing a parent process to flow the signed-in account to child processes. An explicit assignment to `AuthenticatedUserId` always takes precedence. |
 
 > [!NOTE]
 > - The use of `UNO_PLATFORM_TELEMETRY_FILE` is intended for testing, debugging, or local development scenarios. To activate file-based telemetry, resolve telemetry using `AddTelemetry(...)` or `TelemetryFactory.Create<T>()` so the environment variable is detected.
@@ -98,6 +128,10 @@ Example output:
 ```
 global: {"Timestamp":"2025-07-07T12:34:56.789Z","EventName":"global/AppStarted","Properties":{},"Measurements":null}
 ```
+
+When an authenticated user id is set (see [Authenticated User Attribution](#authenticated-user-attribution)),
+each line additionally carries a top-level `AuthenticatedUserId` field. The field is omitted
+entirely while no user is authenticated, keeping the output identical to previous versions.
 
 ## Crash/Exception Reporting
 
@@ -183,6 +217,8 @@ To verify telemetry is working in your WASM app:
 The WASM implementation:
 - Detects the browser environment using `RuntimeInformation.IsOSPlatform(OSPlatform.Create("BROWSER"))`
 - Sends telemetry payloads that match the Application Insights v2 REST API schema
+- Adds the `ai.user.authUserId` tag to both event and exception envelopes when an authenticated
+  user id is set (parity with other platforms; the tag is omitted when unset)
 - Uses `System.Text.Json` for serialization (no additional dependencies)
 - Handles network failures gracefully without crashing the app
 - Supports CORS out-of-the-box (Application Insights endpoint has CORS enabled)

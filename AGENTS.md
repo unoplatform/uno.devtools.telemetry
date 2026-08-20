@@ -148,11 +148,11 @@ xmllint --format wasm-test-results.xml
 
 Expected output structure:
 ```xml
-<test-run result="Passed" total="8" passed="8" failed="0">
+<test-run result="Passed" total="9" passed="9" failed="0">
   <test-suite name="Uno.DevTools.Telemetry.WasmTests">
     <test-case name="Telemetry_InitializesOnWasm_WithoutErrors()" result="Passed" />
     <test-case name="Telemetry_TrackEvent_OnWasm_DoesNotThrow()" result="Passed" />
-    <!-- ... 6 more tests ... -->
+    <!-- ... 7 more tests ... -->
   </test-suite>
 </test-run>
 ```
@@ -246,7 +246,7 @@ dotnet clean && dotnet restore --force-evaluate
 - Service collection extensions
 
 ### WASM Runtime Tests (Uno.DevTools.Telemetry.WasmTests)
-**Current Tests (8 total):**
+**Current Tests (9 total):**
 1. `Telemetry_InitializesOnWasm_WithoutErrors()` - Validates initialization succeeds on WASM
 2. `Telemetry_TrackEvent_OnWasm_DoesNotThrow()` - Validates event tracking works
 3. `Telemetry_TrackException_OnWasm_DoesNotThrow()` - Validates exception tracking works
@@ -254,7 +254,8 @@ dotnet clean && dotnet restore --force-evaluate
 5. `Telemetry_DisabledViaEnvironmentVariable_OnWasm()` - Validates opt-out via env var
 6. `Telemetry_MultipleEvents_OnWasm_DoesNotCauseThreadingIssues()` - Validates concurrent event tracking
 7. `Telemetry_AllExceptionSeverities_OnWasm()` - Validates all severity levels work
-8. `Telemetry_ThreadBlockingTrackEvent_OnWasm()` - Validates synchronous blocking behavior
+8. `Telemetry_AuthenticatedUserId_SetTrackClear_OnWasm_DoesNotThrow()` - Validates authenticated user id set/track/clear
+9. `Telemetry_ThreadBlockingTrackEvent_OnWasm()` - Validates synchronous blocking behavior
 
 ## Adding New Tests
 
@@ -325,4 +326,4 @@ uno-runtimetests-wasm --app-path ./publish/wwwroot --output ./wasm-test-results.
 cat wasm-test-results.xml | grep "result="
 ```
 
-Expected output: `result="Passed" total="8" passed="8" failed="0"`
+Expected output: `result="Passed" total="9" passed="9" failed="0"`

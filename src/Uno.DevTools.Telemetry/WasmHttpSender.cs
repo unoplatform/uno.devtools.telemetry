@@ -43,6 +43,8 @@ namespace Uno.DevTools.Telemetry
 			string? sessionId)
 		{
 			// Callers discard the returned task; an exception outside this try would go unobserved.
+			// Deliberately generic catch: telemetry must never fault the app nor lose its own
+			// diagnostics, whatever the failure type — same policy as SendAsync below.
 			try
 			{
 				var envelope = CreateEventEnvelope(eventName, properties, measurements, machineId, sessionId);
@@ -63,6 +65,8 @@ namespace Uno.DevTools.Telemetry
 			string? sessionId)
 		{
 			// Callers discard the returned task; an exception outside this try would go unobserved.
+			// Deliberately generic catch: telemetry must never fault the app nor lose its own
+			// diagnostics, whatever the failure type — same policy as SendAsync below.
 			try
 			{
 				var envelope = CreateExceptionEnvelope(exception, severity, properties, measurements, machineId, sessionId);

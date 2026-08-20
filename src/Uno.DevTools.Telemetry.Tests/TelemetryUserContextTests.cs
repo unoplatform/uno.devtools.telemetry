@@ -32,7 +32,7 @@ namespace Uno.DevTools.Telemetry.Tests
         public void Given_AuthenticatedUserIdSetViaOneInstance_When_ReadFromAnotherInstance_Then_SameValueIsVisible()
         {
             // Arrange
-            var tempPath = Path.Combine(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
+            var tempPath = Path.Join(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
             ITelemetry first = new FileTelemetry(tempPath, "first");
             ITelemetry second = new FileTelemetry(tempPath, "second");
 
@@ -155,7 +155,7 @@ namespace Uno.DevTools.Telemetry.Tests
         public void Given_ScopedTelemetry_When_SettingAuthenticatedUserId_Then_DelegatesToInner()
         {
             // Arrange
-            var tempPath = Path.Combine(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
+            var tempPath = Path.Join(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
             ITelemetry inner = new FileTelemetry(tempPath, "test");
             var scoped = inner.CreateScope(properties: new Dictionary<string, string> { { "scopeKey", "scopeValue" } });
 

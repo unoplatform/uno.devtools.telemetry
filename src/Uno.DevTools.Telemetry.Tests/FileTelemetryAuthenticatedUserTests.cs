@@ -21,7 +21,7 @@ namespace Uno.DevTools.Telemetry.Tests
 
         private string GetTempFilePath()
         {
-            var filePath = Path.Combine(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
+            var filePath = Path.Join(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
             _filesToCleanup.Add(filePath);
             return filePath;
         }

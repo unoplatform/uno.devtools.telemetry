@@ -64,8 +64,10 @@ namespace Uno.DevTools.Telemetry
             }
             catch (Exception e)
             {
-                // A throwing static field initializer would poison the type forever
-                // (TypeInitializationException on every subsequent access) — degrade to unseeded instead.
+                // Deliberately generic: this runs in a static field initializer, and ANY escaping
+                // exception (SecurityException from the env read, but also a throwing Trace listener
+                // in LogDiagnostic above) would poison the type forever — TypeInitializationException
+                // on every subsequent access, from inside consumer sign-in code. Degrade to unseeded.
                 LogDiagnostic($"Authenticated user id environment seed failed: {e.Message}");
                 return null;
             }

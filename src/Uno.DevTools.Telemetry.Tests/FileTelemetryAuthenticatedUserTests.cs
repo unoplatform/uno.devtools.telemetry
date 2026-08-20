@@ -11,6 +11,14 @@ namespace Uno.DevTools.Telemetry.Tests
     {
         private readonly List<string> _filesToCleanup = new List<string>();
 
+        [TestInitialize]
+        public void Initialize()
+        {
+            // The store can be non-null at startup via the environment seed (read at type init) —
+            // explicit assignment wins over the seed, so this guarantees a deterministic baseline.
+            TelemetryUserContext.AuthenticatedUserId = null;
+        }
+
         private string GetTempFilePath()
         {
             var filePath = Path.Combine(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
@@ -90,6 +98,35 @@ namespace Uno.DevTools.Telemetry.Tests
             using var document = ParseLine(lines[0]);
             document.RootElement.TryGetProperty("AuthenticatedUserId", out _).Should().BeFalse(
                 "the output must stay identical to previous versions when no user is authenticated");
+        }
+
+        [TestMethod]
+        public void Given_NoAuthenticatedUserId_When_TrackEvent_Then_OutputLineIsByteIdenticalToPreviousFormat()
+        {
+            // Arrange — pinned clock so the whole line is a stable snapshot (SC-004: the unset
+            // output must stay byte-identical to releases that predate the AuthenticatedUserId field).
+            var filePath = GetTempFilePath();
+            var telemetry = new FileTelemetry(filePath, "test", new FixedTimeProvider(new DateTimeOffset(2025, 1, 1, 12, 0, 0, TimeSpan.Zero)));
+
+            // Act
+            telemetry.TrackEvent("SnapshotEvent", (IDictionary<string, string>?)null, (IDictionary<string, double>?)null);
+
+            // Assert
+            var lines = File.ReadAllLines(filePath);
+            lines.Should().HaveCount(1);
+            lines[0].Should().Be(
+                """test: {"Type":"event","Timestamp":"2025-01-01T12:00:00","EventName":"test/SnapshotEvent","Properties":null,"Measurements":null}""");
+        }
+
+        private sealed class FixedTimeProvider : TimeProvider
+        {
+            private readonly DateTimeOffset _now;
+
+            public FixedTimeProvider(DateTimeOffset now) => _now = now;
+
+            public override DateTimeOffset GetUtcNow() => _now;
+
+            public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
         }
 
         [TestMethod]

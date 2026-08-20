@@ -1,5 +1,11 @@
 # Feature Specification: Runtime-Mutable Authenticated User Id
 
+**Feature Branch:** dev/mara/global-userid
+**Created:** 2026-08-20
+**Status:** Implemented
+**Spec Version:** 1.0
+**Implementation Date:** 2026-08-20
+
 ## Overview
 
 Telemetry emitted by this package is attributed to an anonymized machine id only. Downstream
@@ -42,10 +48,15 @@ account from its first event, with no IPC.
 
 ### Edge Cases
 
-- **EC-1**: The value changes while events are in flight — items at the boundary may carry either
-  the old or the new value (each item snapshots the value at track time; by design).
-- **EC-2**: Null, empty, or whitespace values normalize to `null` — the tag/field is then absent,
-  never empty.
+- **EC-1**: The value changes while events are in flight — the desktop `Telemetry` implementation
+  stamps each item when its queued track task **drains** (the queue is gated on background
+  initialization), so items enqueued before an identity change carry the value current at drain
+  time; `FileTelemetry` stamps at call time. By design: the accepted failure directions are
+  "unattributed" (sign-out before drain) and, on a same-process identity switch, attribution to
+  the identity active at drain — never a value that was not legitimately set.
+- **EC-2**: Null, empty, whitespace, or over-long (> 1024 characters, the Application Insights tag
+  limit) values normalize to `null` — the tag/field is then absent, never empty and never a
+  truncated prefix (a prefix could collide with another account id).
 - **EC-3**: A value set before the background initialization of a `Telemetry` instance completes
   still applies to all items emitted after initialization (the value is read per item, not captured
   at construction).
@@ -127,7 +138,18 @@ account from its first event, with no IPC.
 - **Initializer ordering**: registered before the `TelemetryClient` is created, so no item can be
   tracked ahead of it within an enabled instance.
 - **Ambient state in tests**: all tests that set the value are `[DoNotParallelize]` and reset it in
-  cleanup, so parallel tests never observe a non-null id.
+  both `[TestInitialize]` and `[TestCleanup]` (the environment seed can make the startup value
+  non-null), so parallel tests never observe a non-null id.
+- **Unverified attribution**: the value is client-asserted — any in-process code can set the store,
+  and any parent process controls the environment seed. The threat this design removes is
+  *per-event* tampering (stripping or overriding the id through the properties dictionary of a
+  single event), not in-process spoofing. Server-side consumers MUST NOT treat
+  `user_AuthenticatedId` as verified identity for authorization, abuse, or billing decisions.
+- **Deferred transmission**: the desktop offline channel persists unsent items to disk and
+  retransmits them in a later run. Tags are serialized into the persisted item, so a retransmitted
+  item carries the identity that was valid when it was emitted — even if that user has since signed
+  out or another user has signed in. Data-deletion obligations for that at-rest window are owned by
+  the consumer.
 
 ## Implementation Summary
 
@@ -156,6 +178,13 @@ account from its first event, with no IPC.
 
 ### Key Design Decisions
 
+- **Why `ITelemetry` gains a member at all (the source break)**: a static-only API
+  (`TelemetryUserContext` alone) would satisfy every scenario with zero breakage — that alternative
+  was considered and rejected because the agreed API contract with the first consuming tool
+  requires the id to be exposed on `ITelemetry` itself, so DI consumers holding only the interface
+  discover and set it without knowing a second type. The break is deliberate and flagged
+  (FR-014).
+
 - **`ITelemetryInitializer` over client-context mutation**: the lock-free track chaining does not
   fully serialize under contention (failed CAS exchanges leave orphaned continuations running
   concurrently with the winning chain), so mutating `TelemetryClient.Context` per event would race.
@@ -169,9 +198,15 @@ account from its first event, with no IPC.
 
 ### Testing Status
 
-- Unit suite: 65/65 passing locally (`dotnet run --project src/Uno.DevTools.Telemetry.Tests/... `),
-  including 22 new tests.
+- Unit suite passing locally (`dotnet run --project src/Uno.DevTools.Telemetry.Tests/...`),
+  including the new ambient-store, initializer (incl. a registration guard on the pipeline wiring),
+  WASM-envelope, FileTelemetry (incl. a byte-identity snapshot with a pinned clock), and DI
+  end-to-end tests.
 - WASM runtime tests: 9 total (1 new), run in CI via `uno-runtimetests-wasm`.
+- Known coverage gap (accepted): the static-field seeding wire-up (`= GetEnvironmentSeed()`) is
+  only covered through direct `GetEnvironmentSeed()` tests — the field initializer itself runs once
+  per process at type init, which an in-process test cannot re-arm. Full coverage would need a
+  child-process integration test.
 
 ## References
 

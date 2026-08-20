@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.ApplicationInsights.DataContracts;
 
 namespace Uno.DevTools.Telemetry.Tests
@@ -6,6 +7,14 @@ namespace Uno.DevTools.Telemetry.Tests
     [DoNotParallelize] // Mutates the process-wide ambient authenticated user id.
     public class AuthenticatedUserTelemetryInitializerTests
     {
+        [TestInitialize]
+        public void Initialize()
+        {
+            // The store can be non-null at startup via the environment seed (read at type init) —
+            // explicit assignment wins over the seed, so this guarantees a deterministic baseline.
+            TelemetryUserContext.AuthenticatedUserId = null;
+        }
+
         [TestCleanup]
         public void Cleanup()
         {
@@ -54,6 +63,29 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Assert
             item.Context.User.AuthenticatedUserId.Should().BeNull();
+        }
+
+        [TestMethod]
+        public void Given_DesktopTelemetry_When_Initialized_Then_AuthenticatedUserInitializerIsRegistered()
+        {
+            // Arrange & Act — dummy key, blocking init so the pipeline is built before the assert.
+            // This guards the single line wiring the initializer into the desktop pipeline (FR-006).
+            var telemetry = new Telemetry(
+                "00000000-0000-0000-0000-000000000000",
+                "test",
+                typeof(AuthenticatedUserTelemetryInitializerTests).Assembly,
+                blockThreadInitialization: true);
+            try
+            {
+                // Assert
+                telemetry.TelemetryConfigurationInternal.Should().NotBeNull();
+                telemetry.TelemetryConfigurationInternal!.TelemetryInitializers
+                    .OfType<AuthenticatedUserTelemetryInitializer>().Should().ContainSingle();
+            }
+            finally
+            {
+                telemetry.Dispose();
+            }
         }
 
         [TestMethod]

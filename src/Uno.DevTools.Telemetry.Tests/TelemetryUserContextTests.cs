@@ -8,6 +8,14 @@ namespace Uno.DevTools.Telemetry.Tests
     [DoNotParallelize] // Mutates the process-wide ambient authenticated user id.
     public class TelemetryUserContextTests
     {
+        [TestInitialize]
+        public void Initialize()
+        {
+            // The store can be non-null at startup via the environment seed (read at type init) —
+            // explicit assignment wins over the seed, so this guarantees a deterministic baseline.
+            TelemetryUserContext.AuthenticatedUserId = null;
+        }
+
         [TestCleanup]
         public void Cleanup()
         {
@@ -74,6 +82,30 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Act
             TelemetryUserContext.AuthenticatedUserId = value;
+
+            // Assert
+            TelemetryUserContext.AuthenticatedUserId.Should().BeNull();
+        }
+
+        [TestMethod]
+        public void Given_ValueAtMaxLength_When_SettingAuthenticatedUserId_Then_ValueIsKept()
+        {
+            // Act
+            var value = new string('a', TelemetryUserContext.MaxAuthenticatedUserIdLength);
+            TelemetryUserContext.AuthenticatedUserId = value;
+
+            // Assert
+            TelemetryUserContext.AuthenticatedUserId.Should().Be(value);
+        }
+
+        [TestMethod]
+        public void Given_ValueOverMaxLength_When_SettingAuthenticatedUserId_Then_NormalizedToNull()
+        {
+            // Arrange
+            TelemetryUserContext.AuthenticatedUserId = "user-42";
+
+            // Act — over-long ids must become absent, never a truncated (possibly colliding) prefix.
+            TelemetryUserContext.AuthenticatedUserId = new string('a', TelemetryUserContext.MaxAuthenticatedUserIdLength + 1);
 
             // Assert
             TelemetryUserContext.AuthenticatedUserId.Should().BeNull();

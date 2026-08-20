@@ -98,9 +98,31 @@ static `TelemetryUserContext.AuthenticatedUserId` property without an `ITelemetr
 
 Notes:
 - Null, empty, or whitespace values are normalized to `null`; the tag is then omitted entirely,
-  never sent empty.
+  never sent empty. Values longer than 1024 characters (the Application Insights tag limit) also
+  normalize to `null` — absent, never a truncated prefix.
 - Only send an opaque account identifier appropriate for your consent and privacy posture — never
   an email address or display name.
+- The value is **unverified client attribution**: any code in the process (or a parent process,
+  via the seed variable below) can set it. Never use `user_AuthenticatedId` server-side for
+  authorization, abuse, or billing decisions.
+
+#### Flowing the id to child processes
+
+Set `UNO_PLATFORM_TELEMETRY_AUTHENTICATED_USER_ID` on the **child's** `ProcessStartInfo.Environment`
+when launching it — do not set it process-globally in the parent (e.g. via
+`Environment.SetEnvironmentVariable`), or children spawned after sign-out will inherit a stale
+identity. Stop passing the variable when the user signs out; already-running children are not
+affected by the parent's sign-out and clear their own value when told to.
+
+#### Operational suppression
+
+If attribution must be turned off without a code change:
+- The seed can be defeated externally by setting `UNO_PLATFORM_TELEMETRY_AUTHENTICATED_USER_ID` to
+  whitespace (normalizes to null).
+- An id assigned *in code* by the application cannot be suppressed externally — short of
+  `UNO_PLATFORM_TELEMETRY_OPTOUT=true`, which disables telemetry entirely.
+- Diagnostic trace: seed pickup and normalization-to-null emit `Debug`/`Trace` lines (value length
+  only, never the id itself) to help diagnose a missing or unexpected `user_AuthenticatedId`.
 
 ### File-based Telemetry
 By default, telemetry is persisted locally before being sent. You can configure the storage location and behavior by customizing the `Telemetry` constructor.

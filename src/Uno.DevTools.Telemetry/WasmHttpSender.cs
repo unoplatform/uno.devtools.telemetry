@@ -42,8 +42,16 @@ namespace Uno.DevTools.Telemetry
 			string machineId,
 			string? sessionId)
 		{
-			var envelope = CreateEventEnvelope(eventName, properties, measurements, machineId, sessionId);
-			await SendAsync(envelope);
+			// Callers discard the returned task; an exception outside this try would go unobserved.
+			try
+			{
+				var envelope = CreateEventEnvelope(eventName, properties, measurements, machineId, sessionId);
+				await SendAsync(envelope);
+			}
+			catch (Exception ex)
+			{
+				LogFailure("WASM telemetry event envelope failed", ex);
+			}
 		}
 
 		public async Task SendExceptionAsync(
@@ -54,8 +62,16 @@ namespace Uno.DevTools.Telemetry
 			string machineId,
 			string? sessionId)
 		{
-			var envelope = CreateExceptionEnvelope(exception, severity, properties, measurements, machineId, sessionId);
-			await SendAsync(envelope);
+			// Callers discard the returned task; an exception outside this try would go unobserved.
+			try
+			{
+				var envelope = CreateExceptionEnvelope(exception, severity, properties, measurements, machineId, sessionId);
+				await SendAsync(envelope);
+			}
+			catch (Exception ex)
+			{
+				LogFailure("WASM telemetry exception envelope failed", ex);
+			}
 		}
 
 		internal object CreateEventEnvelope(
@@ -133,7 +149,8 @@ namespace Uno.DevTools.Telemetry
 
 		private static Dictionary<string, string> CreateTags(string machineId, string? sessionId)
 		{
-			var tags = new Dictionary<string, string>
+			// Capacity 5: four fixed tags plus the optional authenticated user id, avoiding a resize per envelope.
+			var tags = new Dictionary<string, string>(5)
 			{
 				["ai.user.id"] = machineId,
 				["ai.session.id"] = sessionId ?? Guid.NewGuid().ToString(),

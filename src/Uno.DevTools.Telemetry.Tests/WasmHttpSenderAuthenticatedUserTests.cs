@@ -7,6 +7,14 @@ namespace Uno.DevTools.Telemetry.Tests
     [DoNotParallelize] // Mutates the process-wide ambient authenticated user id.
     public class WasmHttpSenderAuthenticatedUserTests
     {
+        [TestInitialize]
+        public void Initialize()
+        {
+            // The store can be non-null at startup via the environment seed (read at type init) —
+            // explicit assignment wins over the seed, so this guarantees a deterministic baseline.
+            TelemetryUserContext.AuthenticatedUserId = null;
+        }
+
         [TestCleanup]
         public void Cleanup()
         {

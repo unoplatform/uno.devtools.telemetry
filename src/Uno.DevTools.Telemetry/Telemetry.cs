@@ -49,6 +49,9 @@ namespace Uno.DevTools.Telemetry
             set => TelemetryUserContext.AuthenticatedUserId = value;
         }
 
+        // Test seam: lets the suite assert pipeline wiring (e.g. initializer registration) without network I/O.
+        internal TelemetryConfiguration? TelemetryConfigurationInternal => _telemetryConfig;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="Telemetry"/> class.
         /// </summary>
@@ -250,8 +253,10 @@ namespace Uno.DevTools.Telemetry
                     TelemetryChannel = _persistenceChannel
                 };
 
-                // Stamps the ambient authenticated user id per item at track time; the client-level
-                // context must not be mutated per event (the track task chain is not fully serialized).
+                // Stamps the ambient authenticated user id per item when the queued track task drains
+                // (not at the TrackEvent call): items enqueued before an identity change carry the value
+                // current at drain time (spec 002 EC-1). The client-level context must not be mutated
+                // per event (the track task chain is not fully serialized).
                 _telemetryConfig.TelemetryInitializers.Add(new AuthenticatedUserTelemetryInitializer());
 
                 _client = new TelemetryClient(_telemetryConfig);

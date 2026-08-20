@@ -42,6 +42,13 @@ namespace Uno.DevTools.Telemetry
 
         public bool Enabled { get; }
 
+        /// <inheritdoc />
+        public string? AuthenticatedUserId
+        {
+            get => TelemetryUserContext.AuthenticatedUserId;
+            set => TelemetryUserContext.AuthenticatedUserId = value;
+        }
+
         /// <summary>
         /// Initializes a new instance of the <see cref="Telemetry"/> class.
         /// </summary>
@@ -242,6 +249,10 @@ namespace Uno.DevTools.Telemetry
                     InstrumentationKey = _instrumentationKey,
                     TelemetryChannel = _persistenceChannel
                 };
+
+                // Stamps the ambient authenticated user id per item at track time; the client-level
+                // context must not be mutated per event (the track task chain is not fully serialized).
+                _telemetryConfig.TelemetryInitializers.Add(new AuthenticatedUserTelemetryInitializer());
 
                 _client = new TelemetryClient(_telemetryConfig);
                 _client.InstrumentationKey = _instrumentationKey;

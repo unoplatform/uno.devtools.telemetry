@@ -78,6 +78,11 @@ public static class TelemetryServiceCollectionExtensions
         private readonly ITelemetry<T> _inner = TelemetryFactory.Create<T>();
 
         public bool Enabled => _inner.Enabled;
+        public string? AuthenticatedUserId
+        {
+            get => _inner.AuthenticatedUserId;
+            set => _inner.AuthenticatedUserId = value;
+        }
         public void Dispose() => _inner.Dispose();
         public void Flush() => _inner.Flush();
         public Task FlushAsync(CancellationToken ct) => _inner.FlushAsync(ct);

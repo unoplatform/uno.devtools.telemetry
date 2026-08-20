@@ -72,6 +72,13 @@ namespace Uno.DevTools.Telemetry
 
         public bool Enabled => true;
 
+        /// <inheritdoc />
+        public string? AuthenticatedUserId
+        {
+            get => TelemetryUserContext.AuthenticatedUserId;
+            set => TelemetryUserContext.AuthenticatedUserId = value;
+        }
+
         public void Dispose()
         {
             // Don't dispose to allow post-shutdown logging
@@ -123,18 +130,32 @@ namespace Uno.DevTools.Telemetry
                 ? eventName
                 : _contextPrefix + "/" + eventName;
 
-            var telemetryEvent = new
-            {
-                Type = TelemetryTypeEvent,
 #if NET8_0_OR_GREATER
-                Timestamp = _timeProvider.GetLocalNow().DateTime, // Use TimeProvider for testability
+            var timestamp = _timeProvider.GetLocalNow().DateTime; // Use TimeProvider for testability
 #else
-                Timestamp = DateTime.Now, // Fallback for netstandard2.0
+            var timestamp = DateTime.Now; // Fallback for netstandard2.0
 #endif
-                EventName = prefixedEventName,
-                Properties = properties,
-                Measurements = measurements
-            };
+
+            // Two shapes so the output stays byte-identical to previous versions when no user is authenticated.
+            var authenticatedUserId = TelemetryUserContext.AuthenticatedUserId;
+            object telemetryEvent = authenticatedUserId is null
+                ? new
+                {
+                    Type = TelemetryTypeEvent,
+                    Timestamp = timestamp,
+                    EventName = prefixedEventName,
+                    Properties = properties,
+                    Measurements = measurements
+                }
+                : new
+                {
+                    Type = TelemetryTypeEvent,
+                    Timestamp = timestamp,
+                    EventName = prefixedEventName,
+                    Properties = properties,
+                    Measurements = measurements,
+                    AuthenticatedUserId = authenticatedUserId
+                };
 
             WriteToFile(telemetryEvent);
         }
@@ -150,24 +171,41 @@ namespace Uno.DevTools.Telemetry
                 return;
             }
 
-            var exceptionEvent = new
-            {
-                Type = TelemetryTypeException,
 #if NET8_0_OR_GREATER
-                Timestamp = _timeProvider.GetLocalNow().DateTime,
+            var timestamp = _timeProvider.GetLocalNow().DateTime;
 #else
-                Timestamp = DateTime.Now,
+            var timestamp = DateTime.Now;
 #endif
-                Severity = severity.ToString(),
-                Exception = new
-                {
-                    Type = exception.GetType().FullName,
-                    Message = exception.Message,
-                    StackTrace = exception.StackTrace
-                },
-                Properties = properties,
-                Measurements = measurements
+
+            var exceptionDetails = new
+            {
+                Type = exception.GetType().FullName,
+                Message = exception.Message,
+                StackTrace = exception.StackTrace
             };
+
+            // Two shapes so the output stays byte-identical to previous versions when no user is authenticated.
+            var authenticatedUserId = TelemetryUserContext.AuthenticatedUserId;
+            object exceptionEvent = authenticatedUserId is null
+                ? new
+                {
+                    Type = TelemetryTypeException,
+                    Timestamp = timestamp,
+                    Severity = severity.ToString(),
+                    Exception = exceptionDetails,
+                    Properties = properties,
+                    Measurements = measurements
+                }
+                : new
+                {
+                    Type = TelemetryTypeException,
+                    Timestamp = timestamp,
+                    Severity = severity.ToString(),
+                    Exception = exceptionDetails,
+                    Properties = properties,
+                    Measurements = measurements,
+                    AuthenticatedUserId = authenticatedUserId
+                };
 
             WriteToFile(exceptionEvent);
         }

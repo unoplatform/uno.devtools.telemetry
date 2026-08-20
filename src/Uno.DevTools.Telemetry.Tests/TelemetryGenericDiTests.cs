@@ -38,4 +38,35 @@ namespace Uno.DevTools.Telemetry.Tests;
             Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE", null);
         }
     }
+
+    [TestMethod]
+    public void Given_TelemetryGenericDiTests_When_AuthenticatedUserIdSet_Then_FileOutputContainsAuthenticatedUserId()
+    {
+        // Arrange
+        var tempFile = Path.GetTempFileName();
+        Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE", tempFile);
+        try
+        {
+            IServiceCollection services = new ServiceCollection();
+            services.AddTelemetry();
+            var provider = services.BuildServiceProvider();
+            var telemetry = provider.GetRequiredService<ITelemetry<MyContext>>();
+
+            // Act — set through the DI-resolved instance the consumer never constructed directly.
+            telemetry.AuthenticatedUserId = "user-42";
+            telemetry.TrackEvent("TestEvent", new Dictionary<string, string> { { "foo", "bar" } }, null);
+            telemetry.Flush();
+
+            // Assert
+            var lines = File.ReadAllLines(tempFile).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+            lines.Should().HaveCount(1, "Should have exactly one telemetry event written");
+            lines[0].Should().Contain("AuthenticatedUserId");
+            lines[0].Should().Contain("user-42");
+        }
+        finally
+        {
+            TelemetryUserContext.AuthenticatedUserId = null;
+            Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE", null);
+        }
+    }
 }

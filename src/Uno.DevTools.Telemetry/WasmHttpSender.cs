@@ -58,7 +58,7 @@ namespace Uno.DevTools.Telemetry
 			await SendAsync(envelope);
 		}
 
-		private object CreateEventEnvelope(
+		internal object CreateEventEnvelope(
 			string eventName,
 			IDictionary<string, string>? properties,
 			IDictionary<string, double>? measurements,
@@ -70,13 +70,7 @@ namespace Uno.DevTools.Telemetry
 				name = $"Microsoft.ApplicationInsights.{_instrumentationKey}.Event",
 				time = DateTime.UtcNow.ToString("o"),
 				iKey = _instrumentationKey,
-				tags = new Dictionary<string, string>
-				{
-					["ai.user.id"] = machineId,
-					["ai.session.id"] = sessionId ?? Guid.NewGuid().ToString(),
-					["ai.device.os"] = "Browser",
-					["ai.device.osVersion"] = "WebAssembly"
-				},
+				tags = CreateTags(machineId, sessionId),
 				data = new
 				{
 					baseType = "EventData",
@@ -91,7 +85,7 @@ namespace Uno.DevTools.Telemetry
 			};
 		}
 
-		private object CreateExceptionEnvelope(
+		internal object CreateExceptionEnvelope(
 			Exception exception,
 			ExceptionSeverity severity,
 			IDictionary<string, string>? properties,
@@ -104,13 +98,7 @@ namespace Uno.DevTools.Telemetry
 				name = $"Microsoft.ApplicationInsights.{_instrumentationKey}.Exception",
 				time = DateTime.UtcNow.ToString("o"),
 				iKey = _instrumentationKey,
-				tags = new Dictionary<string, string>
-				{
-					["ai.user.id"] = machineId,
-					["ai.session.id"] = sessionId ?? Guid.NewGuid().ToString(),
-					["ai.device.os"] = "Browser",
-					["ai.device.osVersion"] = "WebAssembly"
-				},
+				tags = CreateTags(machineId, sessionId),
 				data = new
 				{
 					baseType = "ExceptionData",
@@ -141,6 +129,27 @@ namespace Uno.DevTools.Telemetry
 					}
 				}
 			};
+		}
+
+		private static Dictionary<string, string> CreateTags(string machineId, string? sessionId)
+		{
+			var tags = new Dictionary<string, string>
+			{
+				["ai.user.id"] = machineId,
+				["ai.session.id"] = sessionId ?? Guid.NewGuid().ToString(),
+				["ai.device.os"] = "Browser",
+				["ai.device.osVersion"] = "WebAssembly"
+			};
+
+			// Parity with the desktop AuthenticatedUserTelemetryInitializer: the tag is omitted entirely
+			// when no user is authenticated, never sent empty.
+			var authenticatedUserId = TelemetryUserContext.AuthenticatedUserId;
+			if (authenticatedUserId is not null)
+			{
+				tags["ai.user.authUserId"] = authenticatedUserId;
+			}
+
+			return tags;
 		}
 
 		private async Task SendAsync(object envelope)

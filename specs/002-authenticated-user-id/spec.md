@@ -15,7 +15,8 @@ Consumers have had to wrap `ITelemetry` in decorators that merge a user id into 
 properties — duplicating the package's scope-merge mechanics, leaving the id spoofable/strippable
 through the per-event properties dictionary, and producing per-consumer divergence.
 
-This feature adds a **runtime-mutable authenticated user id** owned by the package:
+This feature adds a **runtime-mutable authenticated user id** owned by the package, with a single
+entry point — the static `TelemetryUserContext.AuthenticatedUserId` property:
 
 - Set on sign-in, cleared on sign-out — unlike the constructor-fixed common properties.
 - **Process-wide ambient state**: once set, every `ITelemetry` instance in the process stamps it,
@@ -24,21 +25,26 @@ This feature adds a **runtime-mutable authenticated user id** owned by the packa
 - Emitted as the Application Insights-native `ai.user.authUserId` context tag (the
   `user_AuthenticatedId` column), immune to per-event property manipulation by construction.
 - Identical behavior on desktop (Application Insights SDK) and WebAssembly (REST envelope).
+- **Purely additive public API** — no change to `ITelemetry` or any other existing public type, so
+  external implementers and callers are unaffected. (This deviates from the originating issue's
+  sketch, which suggested a member on `ITelemetry`; see Key Design Decisions.)
 
 ## User Scenarios & Testing
 
 ### P1: Sign-In / Sign-Out Attribution
 
-A consumer application sets `telemetry.AuthenticatedUserId = accountId` when its user signs in.
-Every subsequent event and exception — from any `ITelemetry` instance in the process — carries the
-id. On sign-out the consumer sets the property to `null`; subsequent items carry no id.
+A consumer application sets `TelemetryUserContext.AuthenticatedUserId = accountId` when its user
+signs in. Every subsequent event and exception — from any `ITelemetry` instance in the process —
+carries the id. On sign-out the consumer sets the property to `null`; subsequent items carry no id.
+No `ITelemetry` instance is needed to set or clear the value, so sign-in code has no dependency on
+telemetry resolution or lifetime.
 
 ### P2: Process-Wide Coverage
 
 A host registers telemetry via the open-generic `AddTelemetry()` DI registration. Library code
-resolves `ITelemetry<TheirContext>` instances the host never sees. Setting the authenticated user
-id once — through any instance or through `TelemetryUserContext.AuthenticatedUserId` — covers all
-of them, including instances created after the value was set.
+resolves `ITelemetry<TheirContext>` instances the host never sees. Setting
+`TelemetryUserContext.AuthenticatedUserId` once covers all of them, including instances created
+after the value was set.
 
 ### P3+: Parent→Child Process Seeding
 
@@ -72,9 +78,10 @@ account from its first event, with no IPC.
 
 - **FR-001**: The package MUST hold the authenticated user id as process-wide ambient state,
   mutable at any time (`TelemetryUserContext.AuthenticatedUserId`).
-- **FR-002**: `ITelemetry` MUST expose `string? AuthenticatedUserId { get; set; }`.
-- **FR-003**: Setting the value through any `ITelemetry` instance MUST affect every instance in the
-  process, including instances created later.
+- **FR-002**: Setting and clearing the value MUST NOT require an `ITelemetry` instance — the static
+  entry point is the single write path.
+- **FR-003**: Setting the value MUST affect every `ITelemetry` instance in the process, including
+  instances created later.
 - **FR-004**: The value MUST be clearable at runtime; items emitted after clearing MUST carry no
   authenticated user id.
 - **FR-005**: Null, empty, or whitespace assignments MUST normalize to `null` (absent, never empty).
@@ -89,12 +96,13 @@ account from its first event, with no IPC.
   `UNO_PLATFORM_TELEMETRY_AUTHENTICATED_USER_ID` environment variable; explicit assignment wins.
 - **FR-010**: Reads and writes MUST be safe from any thread.
 - **FR-011**: Decorators and adapters (`ScopedTelemetry`, `TelemetryAdapter<T>`, the DI generic
-  factory) MUST delegate the property to their inner instance.
+  factory) MUST require no changes — stamping happens at the emitting sink, independent of any
+  wrapper.
 - **FR-012**: The machine id (`ai.user.id` / `Context.User.Id`) MUST be unchanged by this feature.
-- **FR-013**: The implementation MUST compile for all existing TFMs, including netstandard2.0 (no
-  default interface members).
-- **FR-014**: The `ITelemetry` addition is an acknowledged coordinated source break for external
-  implementers, flagged as a breaking change in the release notes/commit.
+- **FR-013**: The implementation MUST compile for all existing TFMs, including netstandard2.0.
+- **FR-014**: The public API change MUST be purely additive — no new or changed members on
+  `ITelemetry` or any other existing public type, so consumers and external implementers compile
+  unchanged.
 
 ### Key Entities
 
@@ -164,12 +172,9 @@ account from its first event, with no IPC.
 
 ### Files Modified
 
-- `src/Uno.DevTools.Telemetry/ITelemetry.cs` — new `AuthenticatedUserId` property.
-- `src/Uno.DevTools.Telemetry/Telemetry.cs` — property delegation; initializer registration in
-  `InitializeTelemetry`.
-- `src/Uno.DevTools.Telemetry/FileTelemetry.cs` — property delegation; conditional top-level field.
-- `src/Uno.DevTools.Telemetry/ScopedTelemetry.cs`, `TelemetryAdapter.cs`,
-  `TelemetryServiceCollectionExtensions.cs` — property delegation to inner.
+- `src/Uno.DevTools.Telemetry/Telemetry.cs` — initializer registration in `InitializeTelemetry`;
+  internal test seam for the pipeline configuration.
+- `src/Uno.DevTools.Telemetry/FileTelemetry.cs` — conditional top-level field.
 - `src/Uno.DevTools.Telemetry/WasmHttpSender.cs` — shared `CreateTags` helper with conditional
   `ai.user.authUserId`; envelope builders made internal for tests.
 - `src/Uno.DevTools.Telemetry.Tests/TelemetryGenericDiTests.cs` — DI end-to-end coverage.
@@ -178,19 +183,20 @@ account from its first event, with no IPC.
 
 ### Key Design Decisions
 
-- **Why `ITelemetry` gains a member at all (the source break)**: a static-only API
-  (`TelemetryUserContext` alone) would satisfy every scenario with zero breakage — that alternative
-  was considered and rejected because the agreed API contract with the first consuming tool
-  requires the id to be exposed on `ITelemetry` itself, so DI consumers holding only the interface
-  discover and set it without knowing a second type. The break is deliberate and flagged
-  (FR-014).
+- **Static-only entry point, no `ITelemetry` member (deviation from the originating issue)**: the
+  issue sketched a runtime-mutable member on `ITelemetry`, but stamping happens at the emitting
+  sinks, which read the ambient store directly — a member on the interface would be a pass-through
+  mirror adding no capability while (a) breaking every external implementer (netstandard2.0 rules
+  out default interface members) and (b) inviting hand-written fakes to implement it per-instance
+  and silently diverge from the process-global production semantics. The static keeps the public
+  API purely additive (FR-014) and keeps sign-in code free of any telemetry-instance dependency.
 
 - **`ITelemetryInitializer` over client-context mutation**: the lock-free track chaining does not
   fully serialize under contention (failed CAS exchanges leave orphaned continuations running
   concurrently with the winning chain), so mutating `TelemetryClient.Context` per event would race.
   Initializers run synchronously on the tracking thread against each item's own context.
 - **Static ambient store over per-instance state**: the only mechanism that reaches instances the
-  consumer never holds (requirement FR-003); the instance property is a thin view over the store.
+  consumer never holds (requirement FR-003).
 - **Two anonymous shapes in `FileTelemetry`** instead of a nullable field: keeps the unset output
   byte-identical without touching the serializer options.
 - **No method arity changes in `WasmHttpSender`**: existing tests invoke `SendEventAsync` /

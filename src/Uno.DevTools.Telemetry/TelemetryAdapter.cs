@@ -50,11 +50,4 @@ public record TelemetryAdapter<T> : ITelemetry<T>
 
     /// <inheritdoc />
     public bool Enabled => Inner.Enabled;
-
-    /// <inheritdoc />
-    public string? AuthenticatedUserId
-    {
-        get => Inner.AuthenticatedUserId;
-        set => Inner.AuthenticatedUserId = value;
-    }
 }

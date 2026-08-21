@@ -14,19 +14,6 @@ namespace Uno.DevTools.Telemetry
     {
         bool Enabled { get; }
 
-        /// <summary>
-        /// Gets or sets the authenticated user id attributed to telemetry emitted by this process.
-        /// </summary>
-        /// <remarks>
-        /// This value is process-wide ambient state: setting it through any <see cref="ITelemetry"/>
-        /// instance affects every instance in the process
-        /// (see <see cref="TelemetryUserContext.AuthenticatedUserId"/>).
-        /// Set it when a user signs in; set it to <see langword="null"/> when the user signs out.
-        /// Null, empty, whitespace, or over-long (&gt; 1024 characters) values are normalized to
-        /// <see langword="null"/>.
-        /// </remarks>
-        string? AuthenticatedUserId { get; set; }
-
         void Dispose();
         void Flush();
         Task FlushAsync(CancellationToken ct);

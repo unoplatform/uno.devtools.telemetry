@@ -42,13 +42,6 @@ namespace Uno.DevTools.Telemetry
 
         public bool Enabled { get; }
 
-        /// <inheritdoc />
-        public string? AuthenticatedUserId
-        {
-            get => TelemetryUserContext.AuthenticatedUserId;
-            set => TelemetryUserContext.AuthenticatedUserId = value;
-        }
-
         // Test seam: lets the suite assert pipeline wiring (e.g. initializer registration) without network I/O.
         internal TelemetryConfiguration? TelemetryConfigurationInternal => _telemetryConfig;
 

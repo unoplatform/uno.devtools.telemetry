@@ -79,20 +79,20 @@ When your application has a signed-in user, you can attribute telemetry to that 
 
 ```csharp
 // On sign-in
-telemetry.AuthenticatedUserId = accountId;
+TelemetryUserContext.AuthenticatedUserId = accountId;
 
 // On sign-out
-telemetry.AuthenticatedUserId = null;
+TelemetryUserContext.AuthenticatedUserId = null;
 ```
 
 The value is emitted as the Application Insights-native `ai.user.authUserId` context tag and
 surfaces as the `user_AuthenticatedId` column in analytics — separate from, and in addition to,
-the anonymous machine id (`user_Id`). The same value can also be read or written through the
-static `TelemetryUserContext.AuthenticatedUserId` property without an `ITelemetry` instance.
+the anonymous machine id (`user_Id`). No `ITelemetry` instance is involved in setting or clearing
+the value, so sign-in code has no dependency on telemetry resolution or lifetime.
 
 > [!WARNING]
-> The authenticated user id is **process-wide ambient state**: setting it through any `ITelemetry`
-> instance affects every instance in the process, including instances created later (e.g. typed
+> The authenticated user id is **process-wide ambient state**: one value for the whole process,
+> stamped by every `ITelemetry` instance, including instances created later (e.g. typed
 > `ITelemetry<T>` instances resolved from DI). This is by design — the id identifies the user, not
 > the telemetry instance.
 

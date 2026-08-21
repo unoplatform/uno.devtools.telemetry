@@ -25,13 +25,6 @@ namespace Uno.DevTools.Telemetry
 
         public bool Enabled => _inner.Enabled;
 
-        /// <inheritdoc />
-        public string? AuthenticatedUserId
-        {
-            get => _inner.AuthenticatedUserId;
-            set => _inner.AuthenticatedUserId = value;
-        }
-
         public void Dispose()
         {
             // Do not dispose the inner telemetry - only the scope itself is disposed.

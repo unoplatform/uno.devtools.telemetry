@@ -72,13 +72,6 @@ namespace Uno.DevTools.Telemetry
 
         public bool Enabled => true;
 
-        /// <inheritdoc />
-        public string? AuthenticatedUserId
-        {
-            get => TelemetryUserContext.AuthenticatedUserId;
-            set => TelemetryUserContext.AuthenticatedUserId = value;
-        }
-
         public void Dispose()
         {
             // Don't dispose to allow post-shutdown logging

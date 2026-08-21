@@ -187,16 +187,16 @@ public class TelemetryWasmTests
 		try
 		{
 			// Act & Assert - Set, round-trip, track, clear
-			telemetry.AuthenticatedUserId = "wasm-test-user";
-			Assert.AreEqual("wasm-test-user", telemetry.AuthenticatedUserId, "Authenticated user id should round-trip");
+			TelemetryUserContext.AuthenticatedUserId = "wasm-test-user";
+			Assert.AreEqual("wasm-test-user", TelemetryUserContext.AuthenticatedUserId, "Authenticated user id should round-trip");
 
 			telemetry.TrackEvent("AuthenticatedEvent",
 				new Dictionary<string, string> { ["key"] = "value" },
 				(IDictionary<string, double>?)null);
 			telemetry.TrackException(new InvalidOperationException("Authenticated exception"), severity: ExceptionSeverity.Warning);
 
-			telemetry.AuthenticatedUserId = null;
-			Assert.IsNull(telemetry.AuthenticatedUserId, "Authenticated user id should be cleared");
+			TelemetryUserContext.AuthenticatedUserId = null;
+			Assert.IsNull(TelemetryUserContext.AuthenticatedUserId, "Authenticated user id should be cleared");
 
 			telemetry.TrackEvent("SignedOutEvent",
 				(IDictionary<string, string>?)null,

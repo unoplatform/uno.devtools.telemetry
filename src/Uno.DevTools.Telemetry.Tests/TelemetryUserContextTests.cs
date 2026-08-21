@@ -29,19 +29,23 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
-        public void Given_AuthenticatedUserIdSetViaOneInstance_When_ReadFromAnotherInstance_Then_SameValueIsVisible()
+        public void Given_AuthenticatedUserIdSet_When_MultipleInstancesEmit_Then_EveryEventCarriesIt()
         {
-            // Arrange
+            // Arrange — two independent instances, including one created AFTER the value was set:
+            // the ambient store is the single entry point, no instance participates in the write.
             var tempPath = Path.Join(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
             ITelemetry first = new FileTelemetry(tempPath, "first");
-            ITelemetry second = new FileTelemetry(tempPath, "second");
 
             // Act
-            first.AuthenticatedUserId = "user-42";
+            TelemetryUserContext.AuthenticatedUserId = "user-42";
+            ITelemetry second = new FileTelemetry(tempPath, "second");
+            first.TrackEvent("EventA", (IDictionary<string, string>?)null, (IDictionary<string, double>?)null);
+            second.TrackEvent("EventB", (IDictionary<string, string>?)null, (IDictionary<string, double>?)null);
 
             // Assert
-            second.AuthenticatedUserId.Should().Be("user-42");
-            TelemetryUserContext.AuthenticatedUserId.Should().Be("user-42");
+            var lines = File.ReadAllLines(tempPath);
+            lines.Should().HaveCount(2);
+            lines.Should().OnlyContain(line => line.Contains("\"AuthenticatedUserId\":\"user-42\""));
         }
 
         [TestMethod]
@@ -152,24 +156,21 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
-        public void Given_ScopedTelemetry_When_SettingAuthenticatedUserId_Then_DelegatesToInner()
+        public void Given_ScopedTelemetry_When_AuthenticatedUserIdSet_Then_ScopedEventsCarryIt()
         {
-            // Arrange
+            // Arrange — scopes need no dedicated wiring: the inner sink reads the ambient store.
             var tempPath = Path.Join(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
             ITelemetry inner = new FileTelemetry(tempPath, "test");
             var scoped = inner.CreateScope(properties: new Dictionary<string, string> { { "scopeKey", "scopeValue" } });
 
             // Act
-            scoped.AuthenticatedUserId = "user-42";
+            TelemetryUserContext.AuthenticatedUserId = "user-42";
+            scoped.TrackEvent("ScopedEvent", (IDictionary<string, string>?)null, (IDictionary<string, double>?)null);
 
             // Assert
-            inner.AuthenticatedUserId.Should().Be("user-42");
-
-            // Act (other direction)
-            inner.AuthenticatedUserId = "user-43";
-
-            // Assert
-            scoped.AuthenticatedUserId.Should().Be("user-43");
+            var line = File.ReadAllLines(tempPath).Should().ContainSingle().Subject;
+            line.Should().Contain("\"AuthenticatedUserId\":\"user-42\"");
+            line.Should().Contain("scopeKey");
         }
     }
 }

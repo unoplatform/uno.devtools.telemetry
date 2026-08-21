@@ -52,8 +52,8 @@ namespace Uno.DevTools.Telemetry.Tests;
             var provider = services.BuildServiceProvider();
             var telemetry = provider.GetRequiredService<ITelemetry<MyContext>>();
 
-            // Act — set through the DI-resolved instance the consumer never constructed directly.
-            telemetry.AuthenticatedUserId = "user-42";
+            // Act — the ambient store covers DI-resolved instances the consumer never constructed directly.
+            TelemetryUserContext.AuthenticatedUserId = "user-42";
             telemetry.TrackEvent("TestEvent", new Dictionary<string, string> { { "foo", "bar" } }, null);
             telemetry.Flush();
 

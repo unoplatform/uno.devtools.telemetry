@@ -60,10 +60,17 @@ namespace Uno.DevTools.Telemetry
         {
             try
             {
-                var seed = Normalize(Environment.GetEnvironmentVariable(AuthenticatedUserIdEnvironmentVariable));
+                var raw = Environment.GetEnvironmentVariable(AuthenticatedUserIdEnvironmentVariable);
+                var seed = Normalize(raw);
                 if (seed is not null)
                 {
                     LogDiagnostic($"Authenticated user id seeded from environment (length {seed.Length}).");
+                }
+                else if (raw is not null)
+                {
+                    // Covers both a malformed value and the documented whitespace suppression trick —
+                    // either way the variable was present, and silence here would be undiagnosable.
+                    LogDiagnostic($"Authenticated user id environment seed present but normalized to null (input length {raw.Length}).");
                 }
 
                 return seed;

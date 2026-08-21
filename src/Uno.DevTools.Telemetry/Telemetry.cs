@@ -267,6 +267,16 @@ namespace Uno.DevTools.Telemetry
                 _machineIdTcs.TrySetResult(null);
                 // we don't want to fail the tool if telemetry fails.
                 Debug.Fail(e.ToString());
+                // Debug.Fail is compiled out of Release builds; without this line a failed
+                // initialization leaves telemetry silently disabled with zero operator signal.
+                try
+                {
+                    Trace.WriteLine($"Telemetry initialization failed; telemetry is disabled for this instance: {e.Message}");
+                }
+                catch
+                {
+                    // Diagnostics are best-effort only.
+                }
             }
         }
 

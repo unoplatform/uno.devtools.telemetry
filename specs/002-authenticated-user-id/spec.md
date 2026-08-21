@@ -57,7 +57,8 @@ account from its first event, with no IPC.
 - **EC-1**: The value changes while events are in flight — the desktop `Telemetry` implementation
   stamps each item when its queued track task **drains** (the queue is gated on background
   initialization), so items enqueued before an identity change carry the value current at drain
-  time; `FileTelemetry` stamps at call time. By design: the accepted failure directions are
+  time (the WebAssembly sender builds its envelope inside the same drained task, so it behaves like
+  desktop); `FileTelemetry` stamps at call time. By design: the accepted failure directions are
   "unattributed" (sign-out before drain) and, on a same-process identity switch, attribution to
   the identity active at drain — never a value that was not legitimately set.
 - **EC-2**: Null, empty, whitespace, or over-long (> 1024 characters, the Application Insights tag
@@ -145,9 +146,9 @@ account from its first event, with no IPC.
 - **Shared identity in multi-product processes** (EC-4): documented; the id identifies the user.
 - **Initializer ordering**: registered before the `TelemetryClient` is created, so no item can be
   tracked ahead of it within an enabled instance.
-- **Ambient state in tests**: all tests that set the value are `[DoNotParallelize]` and reset it in
-  both `[TestInitialize]` and `[TestCleanup]` (the environment seed can make the startup value
-  non-null), so parallel tests never observe a non-null id.
+- **Ambient state in tests**: all tests that set the value are `[DoNotParallelize]` and reset it
+  around each test (the environment seed can make the startup value non-null), so parallel tests
+  never observe a non-null id.
 - **Unverified attribution**: the value is client-asserted — any in-process code can set the store,
   and any parent process controls the environment seed. The threat this design removes is
   *per-event* tampering (stripping or overriding the id through the properties dictionary of a
@@ -176,7 +177,9 @@ account from its first event, with no IPC.
   internal test seam for the pipeline configuration.
 - `src/Uno.DevTools.Telemetry/FileTelemetry.cs` — conditional top-level field.
 - `src/Uno.DevTools.Telemetry/WasmHttpSender.cs` — shared `CreateTags` helper with conditional
-  `ai.user.authUserId`; envelope builders made internal for tests.
+  `ai.user.authUserId`; envelope builders made internal for tests; sender methods hardened to never
+  throw into their discarded fire-and-forget tasks (envelope-construction failures are logged, not
+  lost — envelope correctness itself stays test-guarded via the internal builders).
 - `src/Uno.DevTools.Telemetry.Tests/TelemetryGenericDiTests.cs` — DI end-to-end coverage.
 - `src/Uno.DevTools.Telemetry.WasmTests/.../TelemetryWasmTests.cs` — set/track/clear runtime test.
 - `docs/usage.md`, `AGENTS.md`.

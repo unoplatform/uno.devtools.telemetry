@@ -92,9 +92,9 @@ the value, so sign-in code has no dependency on telemetry resolution or lifetime
 
 > [!WARNING]
 > The authenticated user id is **process-wide ambient state**: one value for the whole process,
-> stamped by every `ITelemetry` instance, including instances created later (e.g. typed
-> `ITelemetry<T>` instances resolved from DI). This is by design — the id identifies the user, not
-> the telemetry instance.
+> stamped by every telemetry instance this package provides, including instances created later
+> (e.g. typed `ITelemetry<T>` instances resolved from DI). This is by design — the id identifies
+> the user, not the telemetry instance. Third-party `ITelemetry` implementations do not stamp it.
 
 Notes:
 - Null, empty, or whitespace values are normalized to `null`; the tag is then omitted entirely,
@@ -120,9 +120,12 @@ If attribution must be turned off without a code change:
 - The seed can be defeated externally by setting `UNO_PLATFORM_TELEMETRY_AUTHENTICATED_USER_ID` to
   whitespace (normalizes to null).
 - An id assigned *in code* by the application cannot be suppressed externally — short of
-  `UNO_PLATFORM_TELEMETRY_OPTOUT=true`, which disables telemetry entirely.
-- Diagnostic trace: seed pickup and normalization-to-null emit `Debug`/`Trace` lines (value length
-  only, never the id itself) to help diagnose a missing or unexpected `user_AuthenticatedId`.
+  `UNO_PLATFORM_TELEMETRY_OPTOUT=true`, which disables the Application Insights pipeline. Note that
+  OPTOUT does not govern the `UNO_PLATFORM_TELEMETRY_FILE` lane — unset that variable to stop
+  file output.
+- Diagnostic trace: seed pickup and normalization-to-null emit `Trace` lines (plus `Debug` output
+  in debug builds), carrying the value length only, never the id itself — to help diagnose a
+  missing or unexpected `user_AuthenticatedId`.
 
 ### File-based Telemetry
 By default, telemetry is persisted locally before being sent. You can configure the storage location and behavior by customizing the `Telemetry` constructor.

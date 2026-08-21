@@ -48,7 +48,7 @@ namespace Uno.DevTools.Telemetry
 			try
 			{
 				var envelope = CreateEventEnvelope(eventName, properties, measurements, machineId, sessionId);
-				await SendAsync(envelope);
+				await SendAsync(envelope).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{
@@ -70,7 +70,7 @@ namespace Uno.DevTools.Telemetry
 			try
 			{
 				var envelope = CreateExceptionEnvelope(exception, severity, properties, measurements, machineId, sessionId);
-				await SendAsync(envelope);
+				await SendAsync(envelope).ConfigureAwait(false);
 			}
 			catch (Exception ex)
 			{

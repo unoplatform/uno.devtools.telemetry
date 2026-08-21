@@ -10,7 +10,13 @@ namespace Uno.DevTools.Telemetry
     /// </summary>
     public static class TelemetryUserContext
     {
-        internal const string AuthenticatedUserIdEnvironmentVariable = "UNO_PLATFORM_TELEMETRY_AUTHENTICATED_USER_ID";
+        /// <summary>
+        /// Name of the environment variable that seeds <see cref="AuthenticatedUserId"/> in a child
+        /// process. Set it on the child's start info when launching tools that should attribute
+        /// telemetry to the same signed-in account. Exposed as a field (not a const) so consumers
+        /// reference this assembly's value rather than a compile-time copy.
+        /// </summary>
+        public static readonly string AuthenticatedUserIdEnvironmentVariable = "UNO_PLATFORM_TELEMETRY_AUTHENTICATED_USER_ID";
 
         // Application Insights caps the ai.user.authUserId context tag at 1024 characters; longer
         // values normalize to null (absent) rather than truncated (a prefix could collide with
@@ -20,9 +26,9 @@ namespace Uno.DevTools.Telemetry
         private static volatile string? _authenticatedUserId = GetEnvironmentSeed();
 
         /// <summary>
-        /// Gets or sets the authenticated user id attached to every telemetry item emitted by any
-        /// <see cref="ITelemetry"/> instance in the current process, including instances created
-        /// after the value is set.
+        /// Gets or sets the authenticated user id attached to every telemetry item emitted by the
+        /// <see cref="ITelemetry"/> implementations this package provides, process-wide — including
+        /// instances created after the value is set.
         /// </summary>
         /// <remarks>
         /// <para>Set this value when a user signs in and set it to <see langword="null"/> when the user
@@ -65,9 +71,9 @@ namespace Uno.DevTools.Telemetry
             catch (Exception e)
             {
                 // Deliberately generic: this runs in a static field initializer, and ANY escaping
-                // exception (SecurityException from the env read, but also a throwing Trace listener
-                // in LogDiagnostic above) would poison the type forever — TypeInitializationException
-                // on every subsequent access, from inside consumer sign-in code. Degrade to unseeded.
+                // exception (e.g. SecurityException from the env read) would poison the type forever —
+                // TypeInitializationException on every subsequent access, from inside consumer
+                // sign-in code. Degrade to unseeded. (LogDiagnostic itself never throws.)
                 LogDiagnostic($"Authenticated user id environment seed failed: {e.Message}");
                 return null;
             }
@@ -80,8 +86,17 @@ namespace Uno.DevTools.Telemetry
 
         private static void LogDiagnostic(string message)
         {
-            Debug.WriteLine(message);
-            Trace.WriteLine(message);
+            // Never throws: a misbehaving Trace listener must not escape into the property setter
+            // or the static field initializer (where it would poison the type).
+            try
+            {
+                Debug.WriteLine(message);
+                Trace.WriteLine(message);
+            }
+            catch
+            {
+                // Diagnostics are best-effort only.
+            }
         }
     }
 }

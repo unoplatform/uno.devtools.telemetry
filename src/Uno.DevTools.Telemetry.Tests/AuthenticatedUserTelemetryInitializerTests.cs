@@ -68,15 +68,21 @@ namespace Uno.DevTools.Telemetry.Tests
         [TestMethod]
         public void Given_DesktopTelemetry_When_Initialized_Then_AuthenticatedUserInitializerIsRegistered()
         {
-            // Arrange & Act — dummy key, blocking init so the pipeline is built before the assert.
-            // This guards the single line wiring the initializer into the desktop pipeline (FR-006).
-            var telemetry = new Telemetry(
-                "00000000-0000-0000-0000-000000000000",
-                "test",
-                typeof(AuthenticatedUserTelemetryInitializerTests).Assembly,
-                blockThreadInitialization: true);
+            // Arrange — a machine-wide UNO_PLATFORM_TELEMETRY_OPTOUT=true would disable the instance
+            // and fail this test for the wrong reason; pin it off for the duration.
+            var optOutOriginal = Environment.GetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT");
+            Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT", null);
+            Telemetry? telemetry = null;
             try
             {
+                // Act — dummy key, blocking init so the pipeline is built before the assert.
+                // This guards the single line wiring the initializer into the desktop pipeline (FR-006).
+                telemetry = new Telemetry(
+                    "00000000-0000-0000-0000-000000000000",
+                    "test",
+                    typeof(AuthenticatedUserTelemetryInitializerTests).Assembly,
+                    blockThreadInitialization: true);
+
                 // Assert
                 telemetry.TelemetryConfigurationInternal.Should().NotBeNull();
                 telemetry.TelemetryConfigurationInternal!.TelemetryInitializers
@@ -84,7 +90,8 @@ namespace Uno.DevTools.Telemetry.Tests
             }
             finally
             {
-                telemetry.Dispose();
+                telemetry?.Dispose();
+                Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT", optOutOriginal);
             }
         }
 

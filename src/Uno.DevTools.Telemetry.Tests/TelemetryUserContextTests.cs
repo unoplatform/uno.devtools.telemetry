@@ -8,6 +8,15 @@ namespace Uno.DevTools.Telemetry.Tests
     [DoNotParallelize] // Mutates the process-wide ambient authenticated user id.
     public class TelemetryUserContextTests
     {
+        private readonly List<string> _filesToCleanup = new List<string>();
+
+        private string GetTempFilePath()
+        {
+            var filePath = Path.Join(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
+            _filesToCleanup.Add(filePath);
+            return filePath;
+        }
+
         [TestInitialize]
         public void Initialize()
         {
@@ -20,6 +29,13 @@ namespace Uno.DevTools.Telemetry.Tests
         public void Cleanup()
         {
             TelemetryUserContext.AuthenticatedUserId = null;
+
+            foreach (var filePath in _filesToCleanup.Where(File.Exists))
+            {
+                File.Delete(filePath);
+            }
+
+            _filesToCleanup.Clear();
         }
 
         [TestMethod]
@@ -33,7 +49,7 @@ namespace Uno.DevTools.Telemetry.Tests
         {
             // Arrange — two independent instances, including one created AFTER the value was set:
             // the ambient store is the single entry point, no instance participates in the write.
-            var tempPath = Path.Join(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
+            var tempPath = GetTempFilePath();
             ITelemetry first = new FileTelemetry(tempPath, "first");
 
             // Act
@@ -159,7 +175,7 @@ namespace Uno.DevTools.Telemetry.Tests
         public void Given_ScopedTelemetry_When_AuthenticatedUserIdSet_Then_ScopedEventsCarryIt()
         {
             // Arrange — scopes need no dedicated wiring: the inner sink reads the ambient store.
-            var tempPath = Path.Join(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
+            var tempPath = GetTempFilePath();
             ITelemetry inner = new FileTelemetry(tempPath, "test");
             var scoped = inner.CreateScope(properties: new Dictionary<string, string> { { "scopeKey", "scopeValue" } });
 

@@ -49,7 +49,7 @@ namespace Uno.DevTools.Telemetry.Tests;
         {
             IServiceCollection services = new ServiceCollection();
             services.AddTelemetry();
-            var provider = services.BuildServiceProvider();
+            using var provider = services.BuildServiceProvider();
             var telemetry = provider.GetRequiredService<ITelemetry<MyContext>>();
 
             // Act — the ambient store covers DI-resolved instances the consumer never constructed directly.
@@ -67,6 +67,7 @@ namespace Uno.DevTools.Telemetry.Tests;
         {
             TelemetryUserContext.AuthenticatedUserId = null;
             Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE", null);
+            File.Delete(tempFile);
         }
     }
 }

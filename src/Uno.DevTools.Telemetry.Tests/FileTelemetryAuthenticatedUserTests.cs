@@ -101,6 +101,24 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
+        public void Given_NoAuthenticatedUserId_When_TrackException_Then_JsonLineHasNoAuthenticatedUserIdProperty()
+        {
+            // Arrange
+            var filePath = GetTempFilePath();
+            var telemetry = new FileTelemetry(filePath, "test");
+
+            // Act
+            telemetry.TrackException(new InvalidOperationException("test"));
+
+            // Assert
+            var lines = File.ReadAllLines(filePath);
+            lines.Should().HaveCount(1);
+            using var document = ParseLine(lines[0]);
+            document.RootElement.TryGetProperty("AuthenticatedUserId", out _).Should().BeFalse(
+                "the exception shape must also stay identical to previous versions when no user is authenticated");
+        }
+
+        [TestMethod]
         public void Given_NoAuthenticatedUserId_When_TrackEvent_Then_OutputLineIsByteIdenticalToPreviousFormat()
         {
             // Arrange — pinned clock so the whole line is a stable snapshot (SC-004: the unset

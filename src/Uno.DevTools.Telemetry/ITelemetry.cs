@@ -10,14 +10,6 @@
 
 namespace Uno.DevTools.Telemetry
 {
-    /// <summary>
-    /// Telemetry abstraction for tracking events and exceptions.
-    /// </summary>
-    /// <remarks>
-    /// To attribute telemetry to a signed-in user, set the process-wide
-    /// <see cref="TelemetryUserContext.AuthenticatedUserId"/> — it is stamped by this package's
-    /// implementations on every item and is deliberately not part of this interface.
-    /// </remarks>
     public interface ITelemetry
     {
         bool Enabled { get; }

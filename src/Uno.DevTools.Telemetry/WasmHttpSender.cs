@@ -7,7 +7,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -40,14 +39,15 @@ namespace Uno.DevTools.Telemetry
 			IDictionary<string, string>? properties,
 			IDictionary<string, double>? measurements,
 			string machineId,
-			string? sessionId)
+			string? sessionId,
+			string? authenticatedUserId)
 		{
 			// Callers discard the returned task; an exception outside this try would go unobserved.
 			// Deliberately generic catch: telemetry must never fault the app nor lose its own
-			// diagnostics, whatever the failure type — same policy as SendAsync below.
+			// diagnostics, whatever the failure type; same policy as SendAsync below.
 			try
 			{
-				var envelope = CreateEventEnvelope(eventName, properties, measurements, machineId, sessionId);
+				var envelope = CreateEventEnvelope(eventName, properties, measurements, machineId, sessionId, authenticatedUserId);
 				await SendAsync(envelope).ConfigureAwait(false);
 			}
 			catch (Exception ex)
@@ -62,14 +62,15 @@ namespace Uno.DevTools.Telemetry
 			IDictionary<string, string>? properties,
 			IDictionary<string, double>? measurements,
 			string machineId,
-			string? sessionId)
+			string? sessionId,
+			string? authenticatedUserId)
 		{
 			// Callers discard the returned task; an exception outside this try would go unobserved.
 			// Deliberately generic catch: telemetry must never fault the app nor lose its own
-			// diagnostics, whatever the failure type — same policy as SendAsync below.
+			// diagnostics, whatever the failure type; same policy as SendAsync below.
 			try
 			{
-				var envelope = CreateExceptionEnvelope(exception, severity, properties, measurements, machineId, sessionId);
+				var envelope = CreateExceptionEnvelope(exception, severity, properties, measurements, machineId, sessionId, authenticatedUserId);
 				await SendAsync(envelope).ConfigureAwait(false);
 			}
 			catch (Exception ex)
@@ -83,14 +84,15 @@ namespace Uno.DevTools.Telemetry
 			IDictionary<string, string>? properties,
 			IDictionary<string, double>? measurements,
 			string machineId,
-			string? sessionId)
+			string? sessionId,
+			string? authenticatedUserId)
 		{
 			return new
 			{
 				name = $"Microsoft.ApplicationInsights.{_instrumentationKey}.Event",
 				time = DateTime.UtcNow.ToString("o"),
 				iKey = _instrumentationKey,
-				tags = CreateTags(machineId, sessionId),
+				tags = CreateTags(machineId, sessionId, authenticatedUserId),
 				data = new
 				{
 					baseType = "EventData",
@@ -111,14 +113,15 @@ namespace Uno.DevTools.Telemetry
 			IDictionary<string, string>? properties,
 			IDictionary<string, double>? measurements,
 			string machineId,
-			string? sessionId)
+			string? sessionId,
+			string? authenticatedUserId)
 		{
 			return new
 			{
 				name = $"Microsoft.ApplicationInsights.{_instrumentationKey}.Exception",
 				time = DateTime.UtcNow.ToString("o"),
 				iKey = _instrumentationKey,
-				tags = CreateTags(machineId, sessionId),
+				tags = CreateTags(machineId, sessionId, authenticatedUserId),
 				data = new
 				{
 					baseType = "ExceptionData",
@@ -151,7 +154,7 @@ namespace Uno.DevTools.Telemetry
 			};
 		}
 
-		private static Dictionary<string, string> CreateTags(string machineId, string? sessionId)
+		private static Dictionary<string, string> CreateTags(string machineId, string? sessionId, string? authenticatedUserId)
 		{
 			// Capacity 5: four fixed tags plus the optional authenticated user id, avoiding a resize per envelope.
 			var tags = new Dictionary<string, string>(5)
@@ -162,9 +165,9 @@ namespace Uno.DevTools.Telemetry
 				["ai.device.osVersion"] = "WebAssembly"
 			};
 
-			// Parity with the desktop AuthenticatedUserTelemetryInitializer: the tag is omitted entirely
-			// when no user is authenticated, never sent empty.
-			var authenticatedUserId = TelemetryUserContext.AuthenticatedUserId;
+			// The id is the one Telemetry captured when the tracking call was made, not the ambient value
+			// at send time. Parity with the desktop path: the tag is omitted entirely when no user is
+			// authenticated, never sent empty.
 			if (authenticatedUserId is not null)
 			{
 				tags["ai.user.authUserId"] = authenticatedUserId;
@@ -196,9 +199,9 @@ namespace Uno.DevTools.Telemetry
 
 		private static void LogFailure(string message, Exception exception)
 		{
-			var logMessage = $"{message}: {exception.Message}";
-			Debug.WriteLine(logMessage);
-			Trace.WriteLine(logMessage);
+			// Message only, never the envelope. Routed through the shared helper so a throwing Trace
+			// listener cannot escape the catch blocks above into the discarded fire-and-forget task.
+			TelemetryDiagnostics.Write($"{message}: {exception.Message}");
 		}
 
 		private string PrependProducerNamespace(string eventName)

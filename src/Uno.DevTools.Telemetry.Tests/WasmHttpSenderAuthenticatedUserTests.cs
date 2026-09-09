@@ -3,24 +3,13 @@ using System.Text.Json;
 
 namespace Uno.DevTools.Telemetry.Tests
 {
+    /// <summary>
+    /// The WASM sender receives the authenticated user id that <see cref="Telemetry"/> captured at
+    /// the tracking call; it never reads the ambient store itself, so these tests need no reset.
+    /// </summary>
     [TestClass]
-    [DoNotParallelize] // Mutates the process-wide ambient authenticated user id.
     public class WasmHttpSenderAuthenticatedUserTests
     {
-        [TestInitialize]
-        public void Initialize()
-        {
-            // The store can be non-null at startup via the environment seed (read at type init) —
-            // explicit assignment wins over the seed, so this guarantees a deterministic baseline.
-            TelemetryUserContext.AuthenticatedUserId = null;
-        }
-
-        [TestCleanup]
-        public void Cleanup()
-        {
-            TelemetryUserContext.AuthenticatedUserId = null;
-        }
-
         private static Dictionary<string, string> GetTags(object envelope)
         {
             using var document = JsonDocument.Parse(JsonSerializer.Serialize(envelope));
@@ -34,31 +23,29 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
-        public void Given_AuthenticatedUserIdSet_When_CreateEventEnvelope_Then_TagsContainAuthUserIdAndMachineId()
+        public void Given_AuthenticatedUserId_When_CreateEventEnvelope_Then_TagsContainAuthUserIdAndMachineId()
         {
             // Arrange
-            TelemetryUserContext.AuthenticatedUserId = "user-42";
             var sender = new WasmHttpSender("test-key", "test-prefix");
 
             // Act
-            var envelope = sender.CreateEventEnvelope("test-event", null, null, "machine-1", "session-1");
+            var envelope = sender.CreateEventEnvelope("test-event", null, null, "machine-1", "session-1", "user-42");
 
-            // Assert
+            // Assert: the wire key is hardcoded on purpose, the test exists to pin it.
             var tags = GetTags(envelope);
             tags.Should().Contain("ai.user.authUserId", "user-42");
             tags.Should().Contain("ai.user.id", "machine-1");
         }
 
         [TestMethod]
-        public void Given_AuthenticatedUserIdSet_When_CreateExceptionEnvelope_Then_TagsContainAuthUserIdAndMachineId()
+        public void Given_AuthenticatedUserId_When_CreateExceptionEnvelope_Then_TagsContainAuthUserIdAndMachineId()
         {
             // Arrange
-            TelemetryUserContext.AuthenticatedUserId = "user-42";
             var sender = new WasmHttpSender("test-key", "test-prefix");
 
             // Act
             var envelope = sender.CreateExceptionEnvelope(
-                new InvalidOperationException("test"), ExceptionSeverity.Error, null, null, "machine-1", "session-1");
+                new InvalidOperationException("test"), ExceptionSeverity.Error, null, null, "machine-1", "session-1", "user-42");
 
             // Assert
             var tags = GetTags(envelope);
@@ -73,7 +60,7 @@ namespace Uno.DevTools.Telemetry.Tests
             var sender = new WasmHttpSender("test-key", "test-prefix");
 
             // Act
-            var envelope = sender.CreateEventEnvelope("test-event", null, null, "machine-1", "session-1");
+            var envelope = sender.CreateEventEnvelope("test-event", null, null, "machine-1", "session-1", null);
 
             // Assert
             var tags = GetTags(envelope);
@@ -89,27 +76,31 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Act
             var envelope = sender.CreateExceptionEnvelope(
-                new InvalidOperationException("test"), ExceptionSeverity.Error, null, null, "machine-1", "session-1");
+                new InvalidOperationException("test"), ExceptionSeverity.Error, null, null, "machine-1", "session-1", null);
 
             // Assert
             GetTags(envelope).Should().NotContainKey("ai.user.authUserId");
         }
 
         [TestMethod]
-        public void Given_AuthenticatedUserIdCleared_When_CreateEventEnvelope_Then_TagIsNoLongerEmitted()
+        public void Given_AmbientValueSetAfterCapture_When_CreateEventEnvelope_Then_CapturedValueWins()
         {
-            // Arrange
-            TelemetryUserContext.AuthenticatedUserId = "user-42";
+            // Arrange: the sender must not consult the ambient store at envelope time.
             var sender = new WasmHttpSender("test-key", "test-prefix");
-            var whileSignedIn = sender.CreateEventEnvelope("test-event", null, null, "machine-1", "session-1");
+            try
+            {
+                TelemetryUserContext.AuthenticatedUserId = "user-late";
 
-            // Act
-            TelemetryUserContext.AuthenticatedUserId = null;
-            var afterSignOut = sender.CreateEventEnvelope("test-event", null, null, "machine-1", "session-1");
+                // Act
+                var envelope = sender.CreateEventEnvelope("test-event", null, null, "machine-1", "session-1", null);
 
-            // Assert
-            GetTags(whileSignedIn).Should().Contain("ai.user.authUserId", "user-42");
-            GetTags(afterSignOut).Should().NotContainKey("ai.user.authUserId");
+                // Assert
+                GetTags(envelope).Should().NotContainKey("ai.user.authUserId");
+            }
+            finally
+            {
+                TelemetryUserContext.AuthenticatedUserId = null;
+            }
         }
     }
 }

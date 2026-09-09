@@ -30,9 +30,9 @@ namespace Uno.DevTools.Telemetry
             var instrumentationKey = attr.InstrumentationKey;
             var prefix = attr.EventsPrefix ?? string.Empty;
 
-            // File-based telemetry override
-            var filePath = Environment.GetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE");
-            if (!string.IsNullOrEmpty(filePath))
+            // File-based telemetry override (null when unset or when the opt-out is set)
+            var filePath = TelemetryEnvironment.GetFileTelemetryPath();
+            if (filePath is not null)
             {
                 return new TelemetryAdapter<T>(new FileTelemetry(filePath, prefix));
             }

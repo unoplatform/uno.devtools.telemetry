@@ -8,25 +8,12 @@ namespace Uno.DevTools.Telemetry.Tests
     [TestClass]
     public class ExceptionTelemetryTests
     {
-        private readonly List<string> _filesToCleanup = new List<string>();
+        private readonly TempFiles _tempFiles = new TempFiles();
 
-        private string GetTempFilePath()
-        {
-            var filePath = Path.Combine(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
-            _filesToCleanup.Add(filePath);
-            return filePath;
-        }
+        private string GetTempFilePath() => _tempFiles.Create();
 
         [TestCleanup]
-        public void Cleanup()
-        {
-            foreach (var filePath in _filesToCleanup.Where(File.Exists))
-            {
-                File.Delete(filePath);
-            }
-
-            _filesToCleanup.Clear();
-        }
+        public void Cleanup() => _tempFiles.Cleanup();
 
         [TestMethod]
         public void Given_FileTelemetry_When_TrackException_Then_WritesExceptionToFile()

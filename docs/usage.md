@@ -86,46 +86,51 @@ TelemetryUserContext.AuthenticatedUserId = null;
 ```
 
 The value is emitted as the Application Insights-native `ai.user.authUserId` context tag and
-surfaces as the `user_AuthenticatedId` column in analytics — separate from, and in addition to,
+surfaces as the `user_AuthenticatedId` column in analytics, separate from, and in addition to,
 the anonymous machine id (`user_Id`). No `ITelemetry` instance is involved in setting or clearing
 the value, so sign-in code has no dependency on telemetry resolution or lifetime.
 
 > [!WARNING]
 > The authenticated user id is **process-wide ambient state**: one value for the whole process,
 > stamped by every telemetry instance this package provides, including instances created later
-> (e.g. typed `ITelemetry<T>` instances resolved from DI). This is by design — the id identifies
+> (e.g. typed `ITelemetry<T>` instances resolved from DI). This is by design: the id identifies
 > the user, not the telemetry instance. Third-party `ITelemetry` implementations do not stamp it.
 
 Notes:
+- Each event or exception captures the value current when `TrackEvent` / `TrackException` is
+  called, even though the desktop pipeline sends asynchronously. An event tracked before sign-in
+  is never attributed to the user who signs in afterwards, and an event tracked while signed in
+  keeps that attribution if the user signs out before it is sent.
 - Null, empty, or whitespace values are normalized to `null`; the tag is then omitted entirely,
-  never sent empty. Values longer than 1024 characters (the Application Insights tag limit) also
-  normalize to `null` — absent, never a truncated prefix.
-- Only send an opaque account identifier appropriate for your consent and privacy posture — never
+  never sent empty. Values longer than 1024 characters (the Application Insights limit for this
+  tag) also normalize to `null`: absent, never a truncated prefix.
+- Only send an opaque account identifier appropriate for your consent and privacy posture, never
   an email address or display name.
-- The value is **unverified client attribution**: any code in the process (or a parent process,
-  via the seed variable below) can set it. Never use `user_AuthenticatedId` server-side for
-  authorization, abuse, or billing decisions.
+- The value is **unverified client attribution**: any code in the process can set it. Never use
+  `user_AuthenticatedId` server-side for authorization, abuse, or billing decisions.
+- The value is per process and starts as `null`. A tool that launches child processes and wants
+  their telemetry attributed to the same account must pass the id to the child itself (for
+  example through the child's `ProcessStartInfo.Environment`) and have the child assign
+  `TelemetryUserContext.AuthenticatedUserId` at startup. The package does not read any
+  environment variable for this.
 
-#### Flowing the id to child processes
-
-Set `UNO_PLATFORM_TELEMETRY_AUTHENTICATED_USER_ID` on the **child's** `ProcessStartInfo.Environment`
-when launching it — do not set it process-globally in the parent (e.g. via
-`Environment.SetEnvironmentVariable`), or children spawned after sign-out will inherit a stale
-identity. Stop passing the variable when the user signs out; already-running children are not
-affected by the parent's sign-out and clear their own value when told to.
-
-#### Operational suppression
+#### Operational suppression and diagnostics
 
 If attribution must be turned off without a code change:
-- The seed can be defeated externally by setting `UNO_PLATFORM_TELEMETRY_AUTHENTICATED_USER_ID` to
-  whitespace (normalizes to null).
-- An id assigned *in code* by the application cannot be suppressed externally — short of
-  `UNO_PLATFORM_TELEMETRY_OPTOUT=true`, which disables the Application Insights pipeline. Note that
-  OPTOUT does not govern the `UNO_PLATFORM_TELEMETRY_FILE` lane — unset that variable to stop
-  file output.
-- Diagnostic trace: seed pickup and normalization-to-null emit `Trace` lines (plus `Debug` output
-  in debug builds), carrying the value length only, never the id itself — to help diagnose a
-  missing or unexpected `user_AuthenticatedId`.
+- `UNO_PLATFORM_TELEMETRY_OPTOUT=true` disables telemetry entirely, including the
+  `UNO_PLATFORM_TELEMETRY_FILE` lane, so the id is neither sent nor written to disk.
+- There is no switch that suppresses only the authenticated user id; an id assigned in code by
+  the application is otherwise always emitted.
+- Diagnostic trace: an assignment that normalizes to `null` emits a `Trace` line (plus `Debug`
+  output in debug builds) carrying the value length only, never the id itself, to help diagnose a
+  missing `user_AuthenticatedId`. Nothing is written unless the host registers a listener before
+  the value is first assigned, for example
+  `Trace.Listeners.Add(new TextWriterTraceListener(path))`; the default listener only reaches an
+  attached debugger.
+- Rolling back: the desktop channel persists unsent items under
+  `Path.GetTempPath()/.uno/telemetry` and retransmits them on a later run, with the tags they
+  were stamped with. Downgrading the package does not stop already-stamped items from being sent;
+  delete the pending files in that directory before restarting if they must not leave the machine.
 
 ### File-based Telemetry
 By default, telemetry is persisted locally before being sent. You can configure the storage location and behavior by customizing the `Telemetry` constructor.
@@ -133,9 +138,8 @@ By default, telemetry is persisted locally before being sent. You can configure 
 ## Environment Variables
 | Variable | Purpose |
 | --- | --- |
-| `UNO_PLATFORM_TELEMETRY_OPTOUT` | Set to `true` to disable telemetry. |
+| `UNO_PLATFORM_TELEMETRY_OPTOUT` | Set to `true` to disable telemetry, including the file-based lane selected by `UNO_PLATFORM_TELEMETRY_FILE`. |
 | `UNO_PLATFORM_TELEMETRY_FILE` | When set, telemetry is logged to the specified file path using `FileTelemetry` instead of Application Insights. On .NET 8+, FileTelemetry uses `TimeProvider` for testable timestamps; on .NET Standard 2.0, it falls back to system time. |
-| `UNO_PLATFORM_TELEMETRY_AUTHENTICATED_USER_ID` | Seeds the initial authenticated user id (read once at first use), allowing a parent process to flow the signed-in account to child processes. An explicit assignment to `AuthenticatedUserId` always takes precedence. |
 
 > [!NOTE]
 > - The use of `UNO_PLATFORM_TELEMETRY_FILE` is intended for testing, debugging, or local development scenarios. To activate file-based telemetry, resolve telemetry using `AddTelemetry(...)` or `TelemetryFactory.Create<T>()` so the environment variable is detected.

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Uno.DevTools.Telemetry.Tests
 {
@@ -9,34 +9,15 @@ namespace Uno.DevTools.Telemetry.Tests
     [DoNotParallelize] // Mutates the process-wide ambient authenticated user id.
     public class FileTelemetryAuthenticatedUserTests
     {
-        private readonly List<string> _filesToCleanup = new List<string>();
+        private static readonly DateTimeOffset SnapshotTime = new DateTimeOffset(2025, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
-        [TestInitialize]
-        public void Initialize()
-        {
-            // The store can be non-null at startup via the environment seed (read at type init) —
-            // explicit assignment wins over the seed, so this guarantees a deterministic baseline.
-            TelemetryUserContext.AuthenticatedUserId = null;
-        }
-
-        private string GetTempFilePath()
-        {
-            var filePath = Path.Join(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
-            _filesToCleanup.Add(filePath);
-            return filePath;
-        }
+        private readonly TempFiles _tempFiles = new TempFiles();
 
         [TestCleanup]
         public void Cleanup()
         {
             TelemetryUserContext.AuthenticatedUserId = null;
-
-            foreach (var filePath in _filesToCleanup.Where(File.Exists))
-            {
-                File.Delete(filePath);
-            }
-
-            _filesToCleanup.Clear();
+            _tempFiles.Cleanup();
         }
 
         private static JsonDocument ParseLine(string line)
@@ -46,11 +27,19 @@ namespace Uno.DevTools.Telemetry.Tests
             return JsonDocument.Parse(line.Substring(jsonStart));
         }
 
+        private static FakeTimeProvider CreatePinnedClock()
+        {
+            // FakeTimeProvider does not auto-advance; UTC keeps the serialized local time stable.
+            var clock = new FakeTimeProvider(SnapshotTime);
+            clock.SetLocalTimeZone(TimeZoneInfo.Utc);
+            return clock;
+        }
+
         [TestMethod]
         public void Given_AuthenticatedUserIdSet_When_TrackEvent_Then_JsonLineContainsAuthenticatedUserId()
         {
             // Arrange
-            var filePath = GetTempFilePath();
+            var filePath = _tempFiles.Create();
             var telemetry = new FileTelemetry(filePath, "test");
             TelemetryUserContext.AuthenticatedUserId = "user-42";
 
@@ -68,7 +57,7 @@ namespace Uno.DevTools.Telemetry.Tests
         public void Given_AuthenticatedUserIdSet_When_TrackException_Then_JsonLineContainsAuthenticatedUserId()
         {
             // Arrange
-            var filePath = GetTempFilePath();
+            var filePath = _tempFiles.Create();
             var telemetry = new FileTelemetry(filePath, "test");
             TelemetryUserContext.AuthenticatedUserId = "user-42";
 
@@ -86,7 +75,7 @@ namespace Uno.DevTools.Telemetry.Tests
         public void Given_NoAuthenticatedUserId_When_TrackEvent_Then_JsonLineHasNoAuthenticatedUserIdProperty()
         {
             // Arrange
-            var filePath = GetTempFilePath();
+            var filePath = _tempFiles.Create();
             var telemetry = new FileTelemetry(filePath, "test");
 
             // Act
@@ -104,7 +93,7 @@ namespace Uno.DevTools.Telemetry.Tests
         public void Given_NoAuthenticatedUserId_When_TrackException_Then_JsonLineHasNoAuthenticatedUserIdProperty()
         {
             // Arrange
-            var filePath = GetTempFilePath();
+            var filePath = _tempFiles.Create();
             var telemetry = new FileTelemetry(filePath, "test");
 
             // Act
@@ -121,10 +110,10 @@ namespace Uno.DevTools.Telemetry.Tests
         [TestMethod]
         public void Given_NoAuthenticatedUserId_When_TrackEvent_Then_OutputLineIsByteIdenticalToPreviousFormat()
         {
-            // Arrange — pinned clock so the whole line is a stable snapshot (SC-004: the unset
+            // Arrange: pinned clock so the whole line is a stable snapshot (SC-004: the unset
             // output must stay byte-identical to releases that predate the AuthenticatedUserId field).
-            var filePath = GetTempFilePath();
-            var telemetry = new FileTelemetry(filePath, "test", new FixedTimeProvider(new DateTimeOffset(2025, 1, 1, 12, 0, 0, TimeSpan.Zero)));
+            var filePath = _tempFiles.Create();
+            var telemetry = new FileTelemetry(filePath, "test", CreatePinnedClock());
 
             // Act
             telemetry.TrackEvent("SnapshotEvent", (IDictionary<string, string>?)null, (IDictionary<string, double>?)null);
@@ -136,22 +125,45 @@ namespace Uno.DevTools.Telemetry.Tests
                 """test: {"Type":"event","Timestamp":"2025-01-01T12:00:00","EventName":"test/SnapshotEvent","Properties":null,"Measurements":null}""");
         }
 
-        private sealed class FixedTimeProvider : TimeProvider
+        [TestMethod]
+        public void Given_NoAuthenticatedUserId_When_TrackException_Then_OutputLineIsByteIdenticalToPreviousFormat()
         {
-            private readonly DateTimeOffset _now;
+            // Arrange: same pinned clock; an exception that was never thrown has a null StackTrace, so
+            // the whole exception shape is a stable snapshot too (FR-008 / SC-004 for the exception path).
+            var filePath = _tempFiles.Create();
+            var telemetry = new FileTelemetry(filePath, "test", CreatePinnedClock());
 
-            public FixedTimeProvider(DateTimeOffset now) => _now = now;
+            // Act
+            telemetry.TrackException(new InvalidOperationException("snapshot"));
 
-            public override DateTimeOffset GetUtcNow() => _now;
+            // Assert
+            var lines = File.ReadAllLines(filePath);
+            lines.Should().HaveCount(1);
+            lines[0].Should().Be(
+                """test: {"Type":"exception","Timestamp":"2025-01-01T12:00:00","Severity":"Error","Exception":{"Type":"System.InvalidOperationException","Message":"snapshot","StackTrace":null},"Properties":null,"Measurements":null}""");
+        }
 
-            public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
+        [TestMethod]
+        public void Given_AuthenticatedUserIdSet_When_TrackEvent_Then_FieldIsAppendedAfterExistingFields()
+        {
+            // Arrange: the field must land last so readers keyed on the previous field order are unaffected.
+            var filePath = _tempFiles.Create();
+            var telemetry = new FileTelemetry(filePath, "test", CreatePinnedClock());
+            TelemetryUserContext.AuthenticatedUserId = "user-42";
+
+            // Act
+            telemetry.TrackEvent("SnapshotEvent", (IDictionary<string, string>?)null, (IDictionary<string, double>?)null);
+
+            // Assert
+            File.ReadAllLines(filePath)[0].Should().Be(
+                """test: {"Type":"event","Timestamp":"2025-01-01T12:00:00","EventName":"test/SnapshotEvent","Properties":null,"Measurements":null,"AuthenticatedUserId":"user-42"}""");
         }
 
         [TestMethod]
         public void Given_InstanceCreatedBeforeSet_When_AuthenticatedUserIdSetLater_Then_SubsequentEventsCarryIt()
         {
             // Arrange
-            var filePath = GetTempFilePath();
+            var filePath = _tempFiles.Create();
             var telemetry = new FileTelemetry(filePath, "test");
 
             // Act

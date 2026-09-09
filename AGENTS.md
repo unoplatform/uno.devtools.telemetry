@@ -148,11 +148,11 @@ xmllint --format wasm-test-results.xml
 
 Expected output structure:
 ```xml
-<test-run result="Passed" total="9" passed="9" failed="0">
+<test-run result="Passed" failed="0">
   <test-suite name="Uno.DevTools.Telemetry.WasmTests">
     <test-case name="Telemetry_InitializesOnWasm_WithoutErrors()" result="Passed" />
     <test-case name="Telemetry_TrackEvent_OnWasm_DoesNotThrow()" result="Passed" />
-    <!-- ... 7 more tests ... -->
+    <!-- one test-case per test listed under "WASM Runtime Tests" below -->
   </test-suite>
 </test-run>
 ```
@@ -246,7 +246,7 @@ dotnet clean && dotnet restore --force-evaluate
 - Service collection extensions
 
 ### WASM Runtime Tests (Uno.DevTools.Telemetry.WasmTests)
-**Current Tests (9 total):**
+**Current Tests** (this list is the single source for the count):
 1. `Telemetry_InitializesOnWasm_WithoutErrors()` - Validates initialization succeeds on WASM
 2. `Telemetry_TrackEvent_OnWasm_DoesNotThrow()` - Validates event tracking works
 3. `Telemetry_TrackException_OnWasm_DoesNotThrow()` - Validates exception tracking works
@@ -326,4 +326,4 @@ uno-runtimetests-wasm --app-path ./publish/wwwroot --output ./wasm-test-results.
 cat wasm-test-results.xml | grep "result="
 ```
 
-Expected output: `result="Passed" total="9" passed="9" failed="0"`
+Expected output: `result="Passed"` with `failed="0"`; `total` matches the list under "WASM Runtime Tests".

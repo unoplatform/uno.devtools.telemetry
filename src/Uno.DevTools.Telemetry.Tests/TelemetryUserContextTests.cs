@@ -1,55 +1,33 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
-using System.Linq;
 
 namespace Uno.DevTools.Telemetry.Tests
 {
     [TestClass]
-    [DoNotParallelize] // Mutates the process-wide ambient authenticated user id.
+    [DoNotParallelize] // Mutates the process-wide ambient authenticated user id and Trace.Listeners.
     public class TelemetryUserContextTests
     {
-        private readonly List<string> _filesToCleanup = new List<string>();
-
-        private string GetTempFilePath()
-        {
-            var filePath = Path.Join(Path.GetTempPath(), $"telemetry_test_{Guid.NewGuid():N}.log");
-            _filesToCleanup.Add(filePath);
-            return filePath;
-        }
+        private readonly TempFiles _tempFiles = new TempFiles();
+        private readonly CapturingTraceListener _trace = new CapturingTraceListener();
 
         [TestInitialize]
-        public void Initialize()
-        {
-            // The store can be non-null at startup via the environment seed (read at type init) —
-            // explicit assignment wins over the seed, so this guarantees a deterministic baseline.
-            TelemetryUserContext.AuthenticatedUserId = null;
-        }
+        public void Initialize() => Trace.Listeners.Add(_trace);
 
         [TestCleanup]
         public void Cleanup()
         {
+            Trace.Listeners.Remove(_trace);
             TelemetryUserContext.AuthenticatedUserId = null;
-
-            foreach (var filePath in _filesToCleanup.Where(File.Exists))
-            {
-                File.Delete(filePath);
-            }
-
-            _filesToCleanup.Clear();
-        }
-
-        [TestMethod]
-        public void Given_NoAuthenticatedUser_When_ReadingAuthenticatedUserId_Then_ReturnsNull()
-        {
-            TelemetryUserContext.AuthenticatedUserId.Should().BeNull();
+            _tempFiles.Cleanup();
         }
 
         [TestMethod]
         public void Given_AuthenticatedUserIdSet_When_MultipleInstancesEmit_Then_EveryEventCarriesIt()
         {
-            // Arrange — two independent instances, including one created AFTER the value was set:
-            // the ambient store is the single entry point, no instance participates in the write.
-            var tempPath = GetTempFilePath();
+            // Arrange: two independent instances, including one created AFTER the value was set.
+            // The ambient store is the single entry point; no instance participates in the write.
+            var tempPath = _tempFiles.Create();
             ITelemetry first = new FileTelemetry(tempPath, "first");
 
             // Act
@@ -108,10 +86,18 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
-        public void Given_ValueAtMaxLength_When_SettingAuthenticatedUserId_Then_ValueIsKept()
+        public void Given_MaxAuthenticatedUserIdLength_When_Read_Then_IsThe1024CharacterTagLimit()
+        {
+            // The public remarks, docs/usage.md and the spec restate this number for consumers, and the
+            // boundary tests below use the literal, so lowering the constant cannot pass silently.
+            TelemetryUserContext.MaxAuthenticatedUserIdLength.Should().Be(1024);
+        }
+
+        [TestMethod]
+        public void Given_ValueAt1024Characters_When_SettingAuthenticatedUserId_Then_ValueIsKept()
         {
             // Act
-            var value = new string('a', TelemetryUserContext.MaxAuthenticatedUserIdLength);
+            var value = new string('a', 1024);
             TelemetryUserContext.AuthenticatedUserId = value;
 
             // Assert
@@ -119,63 +105,46 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
-        public void Given_ValueOverMaxLength_When_SettingAuthenticatedUserId_Then_NormalizedToNull()
+        public void Given_ValueOver1024Characters_When_SettingAuthenticatedUserId_Then_NormalizedToNull()
         {
             // Arrange
             TelemetryUserContext.AuthenticatedUserId = "user-42";
 
-            // Act — over-long ids must become absent, never a truncated (possibly colliding) prefix.
-            TelemetryUserContext.AuthenticatedUserId = new string('a', TelemetryUserContext.MaxAuthenticatedUserIdLength + 1);
+            // Act: over-long ids must become absent, never a truncated prefix (see the rationale on
+            // TelemetryUserContext.MaxAuthenticatedUserIdLength).
+            TelemetryUserContext.AuthenticatedUserId = new string('a', 1025);
 
             // Assert
             TelemetryUserContext.AuthenticatedUserId.Should().BeNull();
         }
 
         [TestMethod]
-        public void Given_EnvironmentVariableSet_When_GetEnvironmentSeed_Then_ReturnsValue()
+        public void Given_OverLongValue_When_SettingAuthenticatedUserId_Then_DiagnosticCarriesLengthButNeverTheValue()
         {
-            try
-            {
-                // Arrange
-                Environment.SetEnvironmentVariable(TelemetryUserContext.AuthenticatedUserIdEnvironmentVariable, "user-seed");
+            // Act
+            TelemetryUserContext.AuthenticatedUserId = new string('z', 1025);
 
-                // Act
-                var seed = TelemetryUserContext.GetEnvironmentSeed();
-
-                // Assert
-                seed.Should().Be("user-seed");
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable(TelemetryUserContext.AuthenticatedUserIdEnvironmentVariable, null);
-            }
+            // Assert: the Trace line is the only signal a Release consumer gets, so it must fire, and it
+            // must carry the length only.
+            _trace.Messages.Should().Contain(m => m.Contains("normalized to null") && m.Contains("input length 1025"));
+            _trace.Messages.Should().NotContain(m => m.Contains("zzzz"));
         }
 
         [TestMethod]
-        public void Given_EnvironmentVariableWhitespace_When_GetEnvironmentSeed_Then_ReturnsNull()
+        public void Given_ValidValue_When_SettingAuthenticatedUserId_Then_NoDiagnosticIsEmitted()
         {
-            try
-            {
-                // Arrange
-                Environment.SetEnvironmentVariable(TelemetryUserContext.AuthenticatedUserIdEnvironmentVariable, "   ");
+            // Act
+            TelemetryUserContext.AuthenticatedUserId = "user-42";
 
-                // Act
-                var seed = TelemetryUserContext.GetEnvironmentSeed();
-
-                // Assert
-                seed.Should().BeNull();
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable(TelemetryUserContext.AuthenticatedUserIdEnvironmentVariable, null);
-            }
+            // Assert
+            _trace.Messages.Should().NotContain(m => m.Contains("Authenticated user id"));
         }
 
         [TestMethod]
         public void Given_ScopedTelemetry_When_AuthenticatedUserIdSet_Then_ScopedEventsCarryIt()
         {
-            // Arrange — scopes need no dedicated wiring: the inner sink reads the ambient store.
-            var tempPath = GetTempFilePath();
+            // Arrange: scopes need no dedicated wiring, the inner sink reads the ambient store.
+            var tempPath = _tempFiles.Create();
             ITelemetry inner = new FileTelemetry(tempPath, "test");
             var scoped = inner.CreateScope(properties: new Dictionary<string, string> { { "scopeKey", "scopeValue" } });
 

@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.ApplicationInsights.Channel;
 using Microsoft.ApplicationInsights.DataContracts;
 
 namespace Uno.DevTools.Telemetry.Tests
@@ -150,6 +153,31 @@ namespace Uno.DevTools.Telemetry.Tests
             item.Context.User.AuthenticatedUserId.Should().Be("user-a");
             item.Properties.Should().Contain("foo", "bar");
             item.Metrics.Should().Contain("n", 1.5);
+        }
+
+        /// <summary>
+        /// In-process channel that records every item the Application Insights pipeline hands it, so
+        /// the desktop path can be asserted without disk or network I/O.
+        /// </summary>
+        private sealed class CapturingTelemetryChannel : ITelemetryChannel
+        {
+            private readonly ConcurrentQueue<Microsoft.ApplicationInsights.Channel.ITelemetry> _items = new();
+
+            public IReadOnlyList<Microsoft.ApplicationInsights.Channel.ITelemetry> Items => _items.ToList();
+
+            public bool? DeveloperMode { get; set; }
+
+            public string EndpointAddress { get; set; } = string.Empty;
+
+            public void Send(Microsoft.ApplicationInsights.Channel.ITelemetry item) => _items.Enqueue(item);
+
+            public void Flush()
+            {
+            }
+
+            public void Dispose()
+            {
+            }
         }
     }
 }

@@ -184,13 +184,13 @@ after the value was set.
 - `src/Uno.DevTools.Telemetry/TelemetryUserContext.cs`
 - `src/Uno.DevTools.Telemetry/TelemetryDiagnostics.cs`
 - `src/Uno.DevTools.Telemetry/TelemetryEnvironment.cs`
-- `src/Uno.DevTools.Telemetry.Tests/TelemetryUserContextTests.cs`
-- `src/Uno.DevTools.Telemetry.Tests/TelemetryAuthenticatedUserCaptureTests.cs`
-- `src/Uno.DevTools.Telemetry.Tests/TelemetryDiagnosticsTests.cs`
+- `src/Uno.DevTools.Telemetry.Tests/TelemetryUserContextTests.cs` (includes the capturing and
+  throwing `TraceListener` doubles and the diagnostics tests)
+- `src/Uno.DevTools.Telemetry.Tests/TelemetryAuthenticatedUserCaptureTests.cs` (includes the
+  in-process capturing channel)
 - `src/Uno.DevTools.Telemetry.Tests/WasmHttpSenderAuthenticatedUserTests.cs`
 - `src/Uno.DevTools.Telemetry.Tests/FileTelemetryAuthenticatedUserTests.cs`
-- `src/Uno.DevTools.Telemetry.Tests/CapturingTelemetryChannel.cs`, `TraceListeners.cs`,
-  `TempFiles.cs` (test helpers)
+- `src/Uno.DevTools.Telemetry.Tests/TempFiles.cs` (shared temp-file fixture)
 
 ### Files Modified
 

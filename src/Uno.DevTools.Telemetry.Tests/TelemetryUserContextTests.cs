@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 namespace Uno.DevTools.Telemetry.Tests
 {
@@ -141,6 +143,48 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
+        public void Given_ThrowingTraceListener_When_AssignmentNormalizesToNull_Then_SetterDoesNotThrow()
+        {
+            // Arrange: a host listener that faults on every write must not escape into sign-in code.
+            var throwing = new ThrowingTraceListener();
+            Trace.Listeners.Add(throwing);
+            try
+            {
+                // Act
+                var act = () => TelemetryUserContext.AuthenticatedUserId = "   ";
+
+                // Assert
+                act.Should().NotThrow();
+                TelemetryUserContext.AuthenticatedUserId.Should().BeNull();
+            }
+            finally
+            {
+                Trace.Listeners.Remove(throwing);
+            }
+        }
+
+        [TestMethod]
+        public void Given_ThrowingTraceListener_When_TelemetryDiagnosticsWrite_Then_DoesNotThrow()
+        {
+            // Arrange: the same helper backs the WASM sender's catch blocks and the desktop init failure
+            // path; a listener fault escaping it would become an unobserved task exception there.
+            var throwing = new ThrowingTraceListener();
+            Trace.Listeners.Add(throwing);
+            try
+            {
+                // Act
+                var act = () => TelemetryDiagnostics.Write("diagnostic");
+
+                // Assert
+                act.Should().NotThrow();
+            }
+            finally
+            {
+                Trace.Listeners.Remove(throwing);
+            }
+        }
+
+        [TestMethod]
         public void Given_ScopedTelemetry_When_AuthenticatedUserIdSet_Then_ScopedEventsCarryIt()
         {
             // Arrange: scopes need no dedicated wiring, the inner sink reads the ambient store.
@@ -156,6 +200,43 @@ namespace Uno.DevTools.Telemetry.Tests
             var line = File.ReadAllLines(tempPath).Should().ContainSingle().Subject;
             line.Should().Contain("\"AuthenticatedUserId\":\"user-42\"");
             line.Should().Contain("scopeKey");
+        }
+
+        /// <summary>
+        /// Records every message written to <see cref="Trace"/> while installed, so the tests can assert
+        /// what the diagnostics carry and, more importantly, what they never carry.
+        /// </summary>
+        private sealed class CapturingTraceListener : TraceListener
+        {
+            private readonly ConcurrentQueue<string> _messages = new();
+
+            public IReadOnlyList<string> Messages => _messages.ToList();
+
+            public override void Write(string? message)
+            {
+                if (message is not null)
+                {
+                    _messages.Enqueue(message);
+                }
+            }
+
+            public override void WriteLine(string? message)
+            {
+                if (message is not null)
+                {
+                    _messages.Enqueue(message);
+                }
+            }
+        }
+
+        /// <summary>
+        /// A host listener that faults on every write. The package's diagnostics must survive it.
+        /// </summary>
+        private sealed class ThrowingTraceListener : TraceListener
+        {
+            public override void Write(string? message) => throw new InvalidOperationException("listener fault");
+
+            public override void WriteLine(string? message) => throw new InvalidOperationException("listener fault");
         }
     }
 }

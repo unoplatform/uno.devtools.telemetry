@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -20,6 +21,29 @@ namespace Uno.DevTools.Telemetry
         {
             WriteIndented = false // Use single-line JSON for easier parsing in tests
         };
+
+        // One record per shape; declaration order is the serialized field order. AuthenticatedUserId is
+        // the only field omitted when null, so the unset output stays byte-identical to previous versions
+        // (Properties and Measurements still serialize as null). A serializer-wide WhenWritingNull would
+        // drop those two as well, which is why the condition is on this one property only.
+        private sealed record EventRecord(
+            string Type,
+            DateTime Timestamp,
+            string EventName,
+            IDictionary<string, string>? Properties,
+            IDictionary<string, double>? Measurements,
+            [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AuthenticatedUserId);
+
+        private sealed record ExceptionDetails(string? Type, string Message, string? StackTrace);
+
+        private sealed record ExceptionRecord(
+            string Type,
+            DateTime Timestamp,
+            string Severity,
+            ExceptionDetails Exception,
+            IReadOnlyDictionary<string, string>? Properties,
+            IReadOnlyDictionary<string, double>? Measurements,
+            [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AuthenticatedUserId);
 
         private readonly string _filePath;
         private readonly string _contextPrefix;
@@ -123,20 +147,19 @@ namespace Uno.DevTools.Telemetry
                 ? eventName
                 : _contextPrefix + "/" + eventName;
 
-            var telemetryEvent = new
-            {
-                Type = TelemetryTypeEvent,
 #if NET8_0_OR_GREATER
-                Timestamp = _timeProvider.GetLocalNow().DateTime, // Use TimeProvider for testability
+            var timestamp = _timeProvider.GetLocalNow().DateTime; // Use TimeProvider for testability
 #else
-                Timestamp = DateTime.Now, // Fallback for netstandard2.0
+            var timestamp = DateTime.Now; // Fallback for netstandard2.0
 #endif
-                EventName = prefixedEventName,
-                Properties = properties,
-                Measurements = measurements
-            };
 
-            WriteToFile(telemetryEvent);
+            WriteToFile(new EventRecord(
+                TelemetryTypeEvent,
+                timestamp,
+                prefixedEventName,
+                properties,
+                measurements,
+                TelemetryUserContext.AuthenticatedUserId));
         }
 
         public void TrackException(
@@ -150,26 +173,20 @@ namespace Uno.DevTools.Telemetry
                 return;
             }
 
-            var exceptionEvent = new
-            {
-                Type = TelemetryTypeException,
 #if NET8_0_OR_GREATER
-                Timestamp = _timeProvider.GetLocalNow().DateTime,
+            var timestamp = _timeProvider.GetLocalNow().DateTime;
 #else
-                Timestamp = DateTime.Now,
+            var timestamp = DateTime.Now;
 #endif
-                Severity = severity.ToString(),
-                Exception = new
-                {
-                    Type = exception.GetType().FullName,
-                    Message = exception.Message,
-                    StackTrace = exception.StackTrace
-                },
-                Properties = properties,
-                Measurements = measurements
-            };
 
-            WriteToFile(exceptionEvent);
+            WriteToFile(new ExceptionRecord(
+                TelemetryTypeException,
+                timestamp,
+                severity.ToString(),
+                new ExceptionDetails(exception.GetType().FullName, exception.Message, exception.StackTrace),
+                properties,
+                measurements,
+                TelemetryUserContext.AuthenticatedUserId));
         }
 
         private void WriteToFile(object telemetryData)

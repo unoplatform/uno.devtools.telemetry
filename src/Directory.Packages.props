@@ -10,5 +10,6 @@
     <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="1.7.3" />
     <PackageVersion Include="System.Text.Json" Version="9.0.6" />
     <PackageVersion Include="AwesomeAssertions" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.10.0" />
   </ItemGroup>
 </Project>

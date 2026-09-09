@@ -73,13 +73,72 @@ telemetry.TrackEvent("UserAction", new Dictionary<string, string> { { "Action", 
 > When using `ITelemetry` (including `FileTelemetry` or any implementation), do not modify any dictionary or list after passing it as a parameter to telemetry methods (such as `TrackEvent`).
 > All collections passed to telemetry should be considered owned by the telemetry system and must not be mutated by the caller after the call. Mutating collections after passing them may cause race conditions or undefined behavior.
 
+### Authenticated User Attribution
+
+When your application has a signed-in user, you can attribute telemetry to that account:
+
+```csharp
+// On sign-in
+TelemetryUserContext.AuthenticatedUserId = accountId;
+
+// On sign-out
+TelemetryUserContext.AuthenticatedUserId = null;
+```
+
+The value is emitted as the Application Insights-native `ai.user.authUserId` context tag and
+surfaces as the `user_AuthenticatedId` column in analytics, separate from, and in addition to,
+the anonymous machine id (`user_Id`). No `ITelemetry` instance is involved in setting or clearing
+the value, so sign-in code has no dependency on telemetry resolution or lifetime.
+
+> [!WARNING]
+> The authenticated user id is **process-wide ambient state**: one value for the whole process,
+> stamped by every telemetry instance this package provides, including instances created later
+> (e.g. typed `ITelemetry<T>` instances resolved from DI). This is by design: the id identifies
+> the user, not the telemetry instance. Third-party `ITelemetry` implementations do not stamp it.
+
+Notes:
+- Each event or exception captures the value current when `TrackEvent` / `TrackException` is
+  called, even though the desktop pipeline sends asynchronously. An event tracked before sign-in
+  is never attributed to the user who signs in afterwards, and an event tracked while signed in
+  keeps that attribution if the user signs out before it is sent.
+- Null, empty, or whitespace values are normalized to `null`; the tag is then omitted entirely,
+  never sent empty. Values longer than 1024 characters (the Application Insights limit for this
+  tag) also normalize to `null`: absent, never a truncated prefix.
+- Only send an opaque account identifier appropriate for your consent and privacy posture, never
+  an email address or display name.
+- The value is **unverified client attribution**: any code in the process can set it. Never use
+  `user_AuthenticatedId` server-side for authorization, abuse, or billing decisions.
+- The value is per process and starts as `null`. A tool that launches child processes and wants
+  their telemetry attributed to the same account must pass the id to the child itself (for
+  example through the child's `ProcessStartInfo.Environment`) and have the child assign
+  `TelemetryUserContext.AuthenticatedUserId` at startup. The package does not read any
+  environment variable for this.
+
+#### Operational suppression and diagnostics
+
+If attribution must be turned off without a code change:
+- `UNO_PLATFORM_TELEMETRY_OPTOUT=true` disables telemetry entirely, including the
+  `UNO_PLATFORM_TELEMETRY_FILE` lane, so the id is neither sent nor written to disk.
+- There is no switch that suppresses only the authenticated user id; an id assigned in code by
+  the application is otherwise always emitted.
+- Diagnostic trace: an assignment that normalizes to `null` emits a `Trace` line (plus `Debug`
+  output in debug builds) carrying the value length only, never the id itself, to help diagnose a
+  missing `user_AuthenticatedId`. Nothing is written unless the host registers a listener before
+  the value is first assigned, for example
+  `Trace.Listeners.Add(new TextWriterTraceListener(path))`; the default listener only reaches an
+  attached debugger.
+- Rolling back: the desktop channel persists unsent items under
+  `Path.GetTempPath()/.uno/telemetry` and retransmits them on a later run, with the tags they
+  were stamped with. Downgrading the package does not stop already-stamped items from being sent;
+  delete the pending files in that directory before restarting if they must not leave the machine.
+
 ### File-based Telemetry
 By default, telemetry is persisted locally before being sent. You can configure the storage location and behavior by customizing the `Telemetry` constructor.
 
 ## Environment Variables
 | Variable | Purpose |
 | --- | --- |
-| `UNO_PLATFORM_TELEMETRY_OPTOUT` | Set to `true` to disable telemetry. |
+| `UNO_PLATFORM_TELEMETRY_OPTOUT` | Set to `true` to disable telemetry, including the file-based lane selected by `UNO_PLATFORM_TELEMETRY_FILE`. |
 | `UNO_PLATFORM_TELEMETRY_FILE` | When set, telemetry is logged to the specified file path using `FileTelemetry` instead of Application Insights. On .NET 8+, FileTelemetry uses `TimeProvider` for testable timestamps; on .NET Standard 2.0, it falls back to system time. |
 
 > [!NOTE]
@@ -98,6 +157,10 @@ Example output:
 ```
 global: {"Timestamp":"2025-07-07T12:34:56.789Z","EventName":"global/AppStarted","Properties":{},"Measurements":null}
 ```
+
+When an authenticated user id is set (see [Authenticated User Attribution](#authenticated-user-attribution)),
+each line additionally carries a top-level `AuthenticatedUserId` field. The field is omitted
+entirely while no user is authenticated, keeping the output identical to previous versions.
 
 ## Crash/Exception Reporting
 
@@ -183,6 +246,8 @@ To verify telemetry is working in your WASM app:
 The WASM implementation:
 - Detects the browser environment using `RuntimeInformation.IsOSPlatform(OSPlatform.Create("BROWSER"))`
 - Sends telemetry payloads that match the Application Insights v2 REST API schema
+- Adds the `ai.user.authUserId` tag to both event and exception envelopes when an authenticated
+  user id is set (parity with other platforms; the tag is omitted when unset)
 - Uses `System.Text.Json` for serialization (no additional dependencies)
 - Handles network failures gracefully without crashing the app
 - Supports CORS out-of-the-box (Application Insights endpoint has CORS enabled)

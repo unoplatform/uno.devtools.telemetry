@@ -24,9 +24,9 @@ public static class TelemetryServiceCollectionExtensions
     {
         versionAssembly ??= Assembly.GetCallingAssembly();
 
-        // Check for file-based telemetry override
-        var filePath = Environment.GetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE");
-        if (!string.IsNullOrEmpty(filePath))
+        // Check for file-based telemetry override (null when unset or when the opt-out is set)
+        var filePath = TelemetryEnvironment.GetFileTelemetryPath();
+        if (filePath is not null)
         {
             services.AddSingleton<ITelemetry>(sp =>
             {

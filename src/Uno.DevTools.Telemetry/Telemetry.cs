@@ -37,7 +37,7 @@ namespace Uno.DevTools.Telemetry
         private readonly Assembly _versionAssembly;
         private readonly string? _productName;
         private readonly Func<string>? _currentDirectoryProvider;
-        private const string TelemetryOptout = "UNO_PLATFORM_TELEMETRY_OPTOUT";
+        private readonly Microsoft.ApplicationInsights.Channel.ITelemetryChannel? _channelOverride;
         private readonly TaskCompletionSource<string?> _machineIdTcs = new TaskCompletionSource<string?>();
 
         public bool Enabled { get; }
@@ -62,14 +62,31 @@ namespace Uno.DevTools.Telemetry
             Func<bool?>? enabledProvider = null,
             Func<string>? currentDirectoryProvider = null,
             string? productName = null)
+            : this(instrumentationKey, eventNamePrefix, versionAssembly, sessionId, blockThreadInitialization, enabledProvider, currentDirectoryProvider, productName, channel: null)
+        {
+        }
+
+        // Test seam: an injected channel replaces the persistence channel so the suite can observe the
+        // items the desktop pipeline emits in-process, without disk or network I/O.
+        internal Telemetry(
+            string instrumentationKey,
+            string eventNamePrefix,
+            Assembly versionAssembly,
+            string? sessionId,
+            bool blockThreadInitialization,
+            Func<bool?>? enabledProvider,
+            Func<string>? currentDirectoryProvider,
+            string? productName,
+            Microsoft.ApplicationInsights.Channel.ITelemetryChannel? channel)
         {
             _instrumentationKey = instrumentationKey;
             _currentDirectoryProvider = currentDirectoryProvider;
             _eventNamePrefix = eventNamePrefix;
             _versionAssembly = versionAssembly;
             _productName = productName;
+            _channelOverride = channel;
 
-            if (bool.TryParse(Environment.GetEnvironmentVariable(TelemetryOptout), out var telemetryOptOut))
+            if (bool.TryParse(Environment.GetEnvironmentVariable(TelemetryEnvironment.OptOutVariable), out var telemetryOptOut))
             {
                 Enabled = !telemetryOptOut;
             }
@@ -110,6 +127,11 @@ namespace Uno.DevTools.Telemetry
                 return;
             }
 
+            // Captured now, not when the queued task drains: the queue is gated on background
+            // initialization, so an item stamped at drain time could carry an identity that signed in
+            // after this call was made (spec 002 EC-1).
+            var authenticatedUserId = TelemetryUserContext.AuthenticatedUserId;
+
             // Lock-free chaining of telemetry events:
             // 1. Read the current task (originalTask)
             // 2. Create a continuation that will send the new event after originalTask
@@ -121,7 +143,7 @@ namespace Uno.DevTools.Telemetry
             {
                 var originalTask = _trackEventTask;
                 var continuation = originalTask.ContinueWith(
-                    x => TrackEventTask(eventName, properties, measurements)
+                    x => TrackEventTask(eventName, properties, measurements, authenticatedUserId)
                 );
                 var exchanged = Interlocked.CompareExchange(ref _trackEventTask, continuation, originalTask);
                 if (exchanged == originalTask)
@@ -184,7 +206,7 @@ namespace Uno.DevTools.Telemetry
             {
                 return;
             }
-            TrackEventTask(eventName, properties, measurements);
+            TrackEventTask(eventName, properties, measurements, TelemetryUserContext.AuthenticatedUserId);
         }
 
         private void InitializeTelemetry()
@@ -224,10 +246,19 @@ namespace Uno.DevTools.Telemetry
                     _settingsStorageDirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Uno Platform", "telemetry");
                 }
 
-                _persistenceChannel = new PersistenceChannel.PersistenceChannel(
-                    storageDirectoryPath: _storageDirectoryPath);
+                Microsoft.ApplicationInsights.Channel.ITelemetryChannel channel;
+                if (_channelOverride is not null)
+                {
+                    channel = _channelOverride;
+                }
+                else
+                {
+                    _persistenceChannel = new PersistenceChannel.PersistenceChannel(
+                        storageDirectoryPath: _storageDirectoryPath);
 
-                _persistenceChannel.SendingInterval = TimeSpan.FromMilliseconds(1);
+                    _persistenceChannel.SendingInterval = TimeSpan.FromMilliseconds(1);
+                    channel = _persistenceChannel;
+                }
 
                 _commonProperties = new TelemetryCommonProperties(
                     _settingsStorageDirectoryPath,
@@ -240,7 +271,7 @@ namespace Uno.DevTools.Telemetry
                 _telemetryConfig = new TelemetryConfiguration
                 {
                     InstrumentationKey = _instrumentationKey,
-                    TelemetryChannel = _persistenceChannel
+                    TelemetryChannel = channel
                 };
 
                 _client = new TelemetryClient(_telemetryConfig);
@@ -258,13 +289,18 @@ namespace Uno.DevTools.Telemetry
                 _machineIdTcs.TrySetResult(null);
                 // we don't want to fail the tool if telemetry fails.
                 Debug.Fail(e.ToString());
+                // Debug.Fail is compiled out of Release builds; without this line a failed
+                // initialization leaves telemetry silently disabled with zero operator signal. The full
+                // exception (type and stack) goes out, since this is the only signal a Release consumer gets.
+                TelemetryDiagnostics.Write($"Telemetry initialization failed; telemetry is disabled for this instance: {e}");
             }
         }
 
         private void TrackEventTask(
             string eventName,
             IDictionary<string, string>? properties,
-            IDictionary<string, double>? measurements)
+            IDictionary<string, double>? measurements,
+            string? authenticatedUserId)
         {
             if (IsWasmBrowser && _wasmSender != null)
             {
@@ -278,7 +314,8 @@ namespace Uno.DevTools.Telemetry
                         eventProperties,
                         eventMeasurements,
                         _commonProperties![TelemetryCommonProperties.MachineId],
-                        _currentSessionId);
+                        _currentSessionId,
+                        authenticatedUserId);
                 }
                 catch (Exception e)
                 {
@@ -298,7 +335,23 @@ namespace Uno.DevTools.Telemetry
                 var eventProperties = GetEventProperties(properties);
                 var eventMeasurements = GetEventMeasures(measurements);
 
-                _client.TrackEvent(PrependProducerNamespace(eventName), eventProperties, eventMeasurements);
+                var eventTelemetry = new Microsoft.ApplicationInsights.DataContracts.EventTelemetry(PrependProducerNamespace(eventName));
+
+                if (eventProperties != null)
+                {
+                    foreach (var property in eventProperties)
+                    {
+                        eventTelemetry.Properties[property.Key] = property.Value;
+                    }
+                }
+
+                foreach (var measurement in eventMeasurements)
+                {
+                    eventTelemetry.Metrics[measurement.Key] = measurement.Value;
+                }
+
+                StampAuthenticatedUser(eventTelemetry, authenticatedUserId);
+                _client.TrackEvent(eventTelemetry);
             }
             catch (Exception e)
             {
@@ -309,6 +362,17 @@ namespace Uno.DevTools.Telemetry
         private string PrependProducerNamespace(string eventName)
         {
             return _eventNamePrefix + "/" + eventName;
+        }
+
+        // Stamps the id captured at the tracking call onto the item's own context, emitted as the
+        // ai.user.authUserId tag (user_AuthenticatedId). The shared client context must not be mutated
+        // per item: the track task chain is not fully serialized under contention.
+        private static void StampAuthenticatedUser(Microsoft.ApplicationInsights.Channel.ITelemetry item, string? authenticatedUserId)
+        {
+            if (authenticatedUserId is not null)
+            {
+                item.Context.User.AuthenticatedUserId = authenticatedUserId;
+            }
         }
 
         private IDictionary<string, double> GetEventMeasures(IDictionary<string, double>? measurements)
@@ -367,13 +431,16 @@ namespace Uno.DevTools.Telemetry
                 return;
             }
 
+            // Captured at the call, for the same reason as TrackEvent.
+            var authenticatedUserId = TelemetryUserContext.AuthenticatedUserId;
+
             // Use the same lock-free chaining pattern as TrackEvent
             // Note: On single-threaded WASM, there's no concurrent access, so the exchange succeeds immediately.
             while (true)
             {
                 var originalTask = _trackEventTask;
                 var continuation = originalTask.ContinueWith(
-                    x => TrackExceptionTask(exception, properties, measurements, severity)
+                    x => TrackExceptionTask(exception, properties, measurements, severity, authenticatedUserId)
                 );
                 var exchanged = Interlocked.CompareExchange(ref _trackEventTask, continuation, originalTask);
                 if (exchanged == originalTask)
@@ -392,7 +459,8 @@ namespace Uno.DevTools.Telemetry
             Exception exception,
             IReadOnlyDictionary<string, string>? properties,
             IReadOnlyDictionary<string, double>? measurements,
-            ExceptionSeverity severity)
+            ExceptionSeverity severity,
+            string? authenticatedUserId)
         {
             if (IsWasmBrowser && _wasmSender != null)
             {
@@ -407,7 +475,8 @@ namespace Uno.DevTools.Telemetry
                         eventProperties,
                         eventMeasurements,
                         _commonProperties![TelemetryCommonProperties.MachineId],
-                        _currentSessionId);
+                        _currentSessionId,
+                        authenticatedUserId);
                 }
                 catch (Exception e)
                 {
@@ -456,6 +525,7 @@ namespace Uno.DevTools.Telemetry
                     }
                 }
 
+                StampAuthenticatedUser(exceptionTelemetry, authenticatedUserId);
                 _client.TrackException(exceptionTelemetry);
             }
             catch (Exception e)

@@ -8,11 +8,13 @@ namespace Uno.DevTools.Telemetry
     /// </summary>
     public static class TelemetryUserContext
     {
-        // The Application Insights ContextTagKeys schema caps the ai.user.authUserId tag at 1024
-        // characters (MaxStringLength). Longer values normalize to null (absent) rather than being
-        // truncated: a truncated prefix could collide with another account id, so an over-long value
-        // is dropped instead of misattributed. The literal is pinned by TelemetryUserContextTests and
-        // restated for consumers in the <remarks> below and in docs/usage.md.
+        // The Application Insights ContextTagKeys Bond schema (Schema/PublicSchema/ContextTagKeys.bond,
+        // published with the SDKs) declares [MaxStringLength("1024")] on UserAuthUserId, the
+        // ai.user.authUserId tag; ai.user.id is capped at 128 by comparison. Longer values normalize to
+        // null (absent) rather than being truncated: a truncated prefix could collide with another
+        // account id, so an over-long value is dropped instead of misattributed. The literal is pinned
+        // by TelemetryUserContextTests and restated for consumers in the <remarks> below and in
+        // docs/usage.md.
         internal const int MaxAuthenticatedUserIdLength = 1024;
 
         private static volatile string? _authenticatedUserId;

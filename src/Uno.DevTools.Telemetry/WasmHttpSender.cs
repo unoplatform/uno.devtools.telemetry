@@ -19,7 +19,9 @@ namespace Uno.DevTools.Telemetry
 	/// WASM-compatible HTTP sender for Application Insights telemetry.
 	/// Sends telemetry directly to the Application Insights REST endpoint without using the SDK.
 	/// </summary>
-	internal sealed class WasmHttpSender
+	// Not sealed, and the two send methods are virtual: Telemetry accepts an injected sender as a test
+	// seam so the desktop suite can assert what its WASM branch forwards without a browser.
+	internal class WasmHttpSender
 	{
 		// Static HttpClient is intentional: reuse a single handler per app instance.
 		private static readonly HttpClient HttpClient = new();
@@ -34,7 +36,7 @@ namespace Uno.DevTools.Telemetry
 			_eventNamePrefix = eventNamePrefix;
 		}
 
-		public async Task SendEventAsync(
+		public virtual async Task SendEventAsync(
 			string eventName,
 			IDictionary<string, string>? properties,
 			IDictionary<string, double>? measurements,
@@ -56,7 +58,7 @@ namespace Uno.DevTools.Telemetry
 			}
 		}
 
-		public async Task SendExceptionAsync(
+		public virtual async Task SendExceptionAsync(
 			Exception exception,
 			ExceptionSeverity severity,
 			IDictionary<string, string>? properties,
@@ -199,9 +201,10 @@ namespace Uno.DevTools.Telemetry
 
 		private static void LogFailure(string message, Exception exception)
 		{
-			// Message only, never the envelope. Routed through the shared helper so a throwing Trace
-			// listener cannot escape the catch blocks above into the discarded fire-and-forget task.
-			TelemetryDiagnostics.Write($"{message}: {exception.Message}");
+			// Full exception (type and stack) but never the envelope: WASM has no SDK, no offline queue and
+			// no retry, so this line is the only signal an operator gets. Routed through the shared helper
+			// so a throwing Trace listener cannot escape the catch blocks above into the discarded task.
+			TelemetryDiagnostics.Write($"{message}: {exception}");
 		}
 
 		private string PrependProducerNamespace(string eventName)

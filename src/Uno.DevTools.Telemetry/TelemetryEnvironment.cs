@@ -14,10 +14,16 @@ namespace Uno.DevTools.Telemetry
         internal const string FileVariable = "UNO_PLATFORM_TELEMETRY_FILE";
 
         /// <summary>
-        /// True when <c>UNO_PLATFORM_TELEMETRY_OPTOUT</c> parses as <see langword="true"/>.
+        /// Tri-state read of <c>UNO_PLATFORM_TELEMETRY_OPTOUT</c>: <see langword="true"/> or
+        /// <see langword="false"/> when the variable parses as a boolean, <see langword="null"/> when it
+        /// is unset or unparseable. The <see cref="Telemetry"/> constructor treats an explicit
+        /// <see langword="false"/> as forced-enable, overriding its <c>enabledProvider</c>, so the three
+        /// states must stay distinct here.
         /// </summary>
-        internal static bool IsOptedOut()
-            => bool.TryParse(Environment.GetEnvironmentVariable(OptOutVariable), out var optedOut) && optedOut;
+        internal static bool? GetOptOut()
+            => bool.TryParse(Environment.GetEnvironmentVariable(OptOutVariable), out var optedOut) ? optedOut : null;
+
+        private static bool IsOptedOut() => GetOptOut() == true;
 
         /// <summary>
         /// Returns the <c>UNO_PLATFORM_TELEMETRY_FILE</c> path when file-based telemetry should be

@@ -14,18 +14,18 @@ public class TelemetryGenericDiTests
     [TestInitialize]
     public void Initialize()
     {
-        // The opt-out governs the file lane too, so a machine-wide UNO_PLATFORM_TELEMETRY_OPTOUT=true
-        // would route these tests to the disabled Application Insights sink. Pin it off.
-        _optOutOriginal = Environment.GetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT");
-        Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT", null);
+        // The opt-out governs the file lane too, so a machine-wide opt-out would route these tests to
+        // the disabled Application Insights sink. Pin it off.
+        _optOutOriginal = Environment.GetEnvironmentVariable(TelemetryEnvironment.OptOutVariable);
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, null);
     }
 
     [TestCleanup]
     public void Cleanup()
     {
         TelemetryUserContext.AuthenticatedUserId = null;
-        Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE", null);
-        Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT", _optOutOriginal);
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.FileVariable, null);
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, _optOutOriginal);
         _tempFiles.Cleanup();
     }
 
@@ -34,7 +34,7 @@ public class TelemetryGenericDiTests
     {
         // Arrange
         var tempFile = _tempFiles.Create();
-        Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE", tempFile);
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.FileVariable, tempFile);
         IServiceCollection services = new ServiceCollection();
         services.AddTelemetry();
         using var provider = services.BuildServiceProvider();
@@ -58,7 +58,7 @@ public class TelemetryGenericDiTests
     {
         // Arrange
         var tempFile = _tempFiles.Create();
-        Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE", tempFile);
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.FileVariable, tempFile);
         IServiceCollection services = new ServiceCollection();
         services.AddTelemetry();
         using var provider = services.BuildServiceProvider();
@@ -82,8 +82,8 @@ public class TelemetryGenericDiTests
         // Arrange: an organisation-wide opt-out plus a developer's file redirect. The opt-out must win,
         // otherwise the authenticated user id lands on disk in cleartext despite the kill switch.
         var tempFile = _tempFiles.Create();
-        Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE", tempFile);
-        Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT", "true");
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.FileVariable, tempFile);
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, "true");
         TelemetryUserContext.AuthenticatedUserId = "user-42";
         IServiceCollection services = new ServiceCollection();
         services.AddTelemetry();
@@ -104,8 +104,8 @@ public class TelemetryGenericDiTests
     {
         // Arrange: same guarantee for the non-generic registration, which selects the sink separately.
         var tempFile = _tempFiles.Create();
-        Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_FILE", tempFile);
-        Environment.SetEnvironmentVariable("UNO_PLATFORM_TELEMETRY_OPTOUT", "true");
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.FileVariable, tempFile);
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, "true");
         TelemetryUserContext.AuthenticatedUserId = "user-42";
         IServiceCollection services = new ServiceCollection();
         services.AddTelemetry("test-key", "test-prefix");

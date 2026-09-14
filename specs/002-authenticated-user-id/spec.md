@@ -179,42 +179,6 @@ after the value was set.
 
 ## Implementation Summary
 
-### Files Created
-
-- `src/Uno.DevTools.Telemetry/TelemetryUserContext.cs`
-- `src/Uno.DevTools.Telemetry/TelemetryDiagnostics.cs`
-- `src/Uno.DevTools.Telemetry/TelemetryEnvironment.cs`
-- `src/Uno.DevTools.Telemetry.Tests/TelemetryUserContextTests.cs` (includes the capturing and
-  throwing `TraceListener` doubles and the diagnostics tests)
-- `src/Uno.DevTools.Telemetry.Tests/TelemetryAuthenticatedUserCaptureTests.cs` (includes the
-  in-process capturing channel)
-- `src/Uno.DevTools.Telemetry.Tests/WasmHttpSenderAuthenticatedUserTests.cs`
-- `src/Uno.DevTools.Telemetry.Tests/FileTelemetryAuthenticatedUserTests.cs`
-- `src/Uno.DevTools.Telemetry.Tests/TempFiles.cs` (shared temp-file fixture)
-
-### Files Modified
-
-- `src/Uno.DevTools.Telemetry/Telemetry.cs`: captures the value in `TrackEvent` /
-  `TrackException`, threads it through `TrackEventTask` / `TrackExceptionTask`, stamps it onto the
-  item's own context; internal constructor overload accepting an `ITelemetryChannel` as a test seam;
-  initialization failure logs the full exception through `TelemetryDiagnostics`.
-- `src/Uno.DevTools.Telemetry/FileTelemetry.cs`: one private record per shape with the
-  `AuthenticatedUserId` property alone marked `WhenWritingNull`.
-- `src/Uno.DevTools.Telemetry/WasmHttpSender.cs`: `SendEventAsync` / `SendExceptionAsync` and the
-  envelope builders take the captured id; `CreateTags` no longer reads the ambient store;
-  `LogFailure` routes through `TelemetryDiagnostics`; sender methods never throw into their
-  discarded fire-and-forget tasks.
-- `src/Uno.DevTools.Telemetry/TelemetryServiceCollectionExtensions.cs`,
-  `src/Uno.DevTools.Telemetry/ITelemetry.T.cs`: sink selection honours the opt-out through
-  `TelemetryEnvironment.GetFileTelemetryPath()`.
-- `src/Uno.DevTools.Telemetry.Tests/TelemetryGenericDiTests.cs`: DI end-to-end and opt-out coverage.
-- `src/Uno.DevTools.Telemetry.Tests/WasmHttpSenderTests.cs`: reflective wrapper passes the new
-  trailing parameter.
-- `src/Uno.DevTools.Telemetry.Tests/FileTelemetryTests.cs`, `ScopedTelemetryTests.cs`,
-  `ExceptionTelemetryTests.cs`: shared `TempFiles` fixture.
-- `src/Uno.DevTools.Telemetry.WasmTests/.../TelemetryWasmTests.cs`: set/track/clear runtime test.
-- `docs/usage.md`, `AGENTS.md`.
-
 ### Key Design Decisions
 
 - **Static-only entry point, no `ITelemetry` member (deviation from the originating issue)**: the
@@ -265,10 +229,12 @@ after the value was set.
   never the value), the desktop capture-at-call tests through an injected in-process channel, the
   WASM envelope tests with an explicit id, the `FileTelemetry` byte-identity snapshots for both
   shapes, the DI end-to-end and opt-out tests, and the throwing-listener diagnostics tests.
-- WASM runtime tests: the set/track/clear test is listed in AGENTS.md under "WASM Runtime Tests",
-  run in CI via `uno-runtimetests-wasm`. It asserts round-trip and does-not-throw only; envelope
-  tags are covered by the unit tests, since `CreateEventEnvelope` is `internal` and the WASM test
-  project has no `InternalsVisibleTo`.
+- WASM lane: the browser runtime test (listed in AGENTS.md under "WASM Runtime Tests", run in CI
+  via `uno-runtimetests-wasm`) asserts round-trip and does-not-throw only, since the envelope
+  builders are `internal` and that project has no `InternalsVisibleTo`. The unit suite covers the
+  rest on desktop: the envelope tags through the builders directly, and the forwarding from
+  `Telemetry`'s WASM branch through an injected sender seam that records the machine id, session id
+  and authenticated user id it receives, so a transposition of those adjacent arguments fails.
 
 ## References
 

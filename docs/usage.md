@@ -117,8 +117,9 @@ Notes:
 #### Operational suppression and diagnostics
 
 If attribution must be turned off without a code change:
-- `UNO_PLATFORM_TELEMETRY_OPTOUT=true` disables telemetry entirely, including the
-  `UNO_PLATFORM_TELEMETRY_FILE` lane, so the id is neither sent nor written to disk.
+- `UNO_PLATFORM_TELEMETRY_OPTOUT=true` disables telemetry entirely, including the file-based lane
+  selected through `UNO_PLATFORM_TELEMETRY_FILE`, so the id is neither sent nor written to disk. A
+  `FileTelemetry` instance the application constructs directly is not governed by the opt-out.
 - There is no switch that suppresses only the authenticated user id; an id assigned in code by
   the application is otherwise always emitted.
 - Diagnostic trace: an assignment that normalizes to `null` emits a `Trace` line (plus `Debug`
@@ -131,6 +132,8 @@ If attribution must be turned off without a code change:
   `Path.GetTempPath()/.uno/telemetry` and retransmits them on a later run, with the tags they
   were stamped with. Downgrading the package does not stop already-stamped items from being sent;
   delete the pending files in that directory before restarting if they must not leave the machine.
+  On Linux, and on macOS without `TMPDIR`, that directory is the shared `/tmp`, so while a user is
+  signed in the pending files identify the account to other local users.
 
 ### File-based Telemetry
 By default, telemetry is persisted locally before being sent. You can configure the storage location and behavior by customizing the `Telemetry` constructor.
@@ -155,7 +158,7 @@ When `UNO_PLATFORM_TELEMETRY_FILE` is set, all telemetry events are written to t
 
 Example output:
 ```
-global: {"Timestamp":"2025-07-07T12:34:56.789Z","EventName":"global/AppStarted","Properties":{},"Measurements":null}
+global: {"Type":"event","Timestamp":"2025-07-07T12:34:56.789","EventName":"global/AppStarted","Properties":{},"Measurements":null}
 ```
 
 When an authenticated user id is set (see [Authenticated User Attribution](#authenticated-user-attribution)),

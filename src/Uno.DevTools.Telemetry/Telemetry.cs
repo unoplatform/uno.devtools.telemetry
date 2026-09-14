@@ -38,6 +38,7 @@ namespace Uno.DevTools.Telemetry
         private readonly string? _productName;
         private readonly Func<string>? _currentDirectoryProvider;
         private readonly Microsoft.ApplicationInsights.Channel.ITelemetryChannel? _channelOverride;
+        private readonly WasmHttpSender? _wasmSenderOverride;
         private readonly TaskCompletionSource<string?> _machineIdTcs = new TaskCompletionSource<string?>();
 
         public bool Enabled { get; }
@@ -62,12 +63,13 @@ namespace Uno.DevTools.Telemetry
             Func<bool?>? enabledProvider = null,
             Func<string>? currentDirectoryProvider = null,
             string? productName = null)
-            : this(instrumentationKey, eventNamePrefix, versionAssembly, sessionId, blockThreadInitialization, enabledProvider, currentDirectoryProvider, productName, channel: null)
+            : this(instrumentationKey, eventNamePrefix, versionAssembly, sessionId, blockThreadInitialization, enabledProvider, currentDirectoryProvider, productName, channel: null, wasmSender: null)
         {
         }
 
-        // Test seam: an injected channel replaces the persistence channel so the suite can observe the
-        // items the desktop pipeline emits in-process, without disk or network I/O.
+        // Test seams: an injected channel replaces the persistence channel so the suite can observe the
+        // items the desktop pipeline emits in-process, without disk or network I/O; an injected sender
+        // takes the WASM send path on any platform so the arguments forwarded to it can be asserted.
         internal Telemetry(
             string instrumentationKey,
             string eventNamePrefix,
@@ -77,7 +79,8 @@ namespace Uno.DevTools.Telemetry
             Func<bool?>? enabledProvider,
             Func<string>? currentDirectoryProvider,
             string? productName,
-            Microsoft.ApplicationInsights.Channel.ITelemetryChannel? channel)
+            Microsoft.ApplicationInsights.Channel.ITelemetryChannel? channel,
+            WasmHttpSender? wasmSender)
         {
             _instrumentationKey = instrumentationKey;
             _currentDirectoryProvider = currentDirectoryProvider;
@@ -85,8 +88,11 @@ namespace Uno.DevTools.Telemetry
             _versionAssembly = versionAssembly;
             _productName = productName;
             _channelOverride = channel;
+            _wasmSenderOverride = wasmSender;
 
-            if (bool.TryParse(Environment.GetEnvironmentVariable(TelemetryEnvironment.OptOutVariable), out var telemetryOptOut))
+            // An explicit true or false in the environment wins over the provider; unset or unparseable
+            // falls through to it.
+            if (TelemetryEnvironment.GetOptOut() is bool telemetryOptOut)
             {
                 Enabled = !telemetryOptOut;
             }
@@ -213,11 +219,16 @@ namespace Uno.DevTools.Telemetry
         {
             try
             {
+                // Test seam only: outside the browser this stays null unless a sender was injected, in
+                // which case the track tasks below take the WASM send path while initialization proceeds
+                // on the desktop path (so the machine id is resolved the normal way).
+                _wasmSender = _wasmSenderOverride;
+
                 if (IsWasmBrowser)
                 {
                     // WASM path: Don't initialize Application Insights SDK (would fail)
                     // Use direct HTTP sender instead
-                    _wasmSender = new WasmHttpSender(_instrumentationKey, _eventNamePrefix);
+                    _wasmSender ??= new WasmHttpSender(_instrumentationKey, _eventNamePrefix);
 
                     // Get WASM-compatible common properties (no file I/O)
                     _commonProperties = new TelemetryCommonProperties(
@@ -302,9 +313,9 @@ namespace Uno.DevTools.Telemetry
             IDictionary<string, double>? measurements,
             string? authenticatedUserId)
         {
-            if (IsWasmBrowser && _wasmSender != null)
+            if (_wasmSender != null)
             {
-                // WASM path: Use HTTP sender
+                // WASM path: Use HTTP sender (the sender only exists on the browser, or under the test seam)
                 try
                 {
                     var eventProperties = GetEventProperties(properties);
@@ -462,9 +473,9 @@ namespace Uno.DevTools.Telemetry
             ExceptionSeverity severity,
             string? authenticatedUserId)
         {
-            if (IsWasmBrowser && _wasmSender != null)
+            if (_wasmSender != null)
             {
-                // WASM path: Use HTTP sender
+                // WASM path: Use HTTP sender (the sender only exists on the browser, or under the test seam)
                 try
                 {
                     var eventProperties = GetEventProperties(properties);

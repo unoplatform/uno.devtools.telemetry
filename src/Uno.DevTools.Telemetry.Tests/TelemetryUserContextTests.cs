@@ -90,8 +90,8 @@ namespace Uno.DevTools.Telemetry.Tests
         [TestMethod]
         public void Given_MaxAuthenticatedUserIdLength_When_Read_Then_IsThe1024CharacterTagLimit()
         {
-            // The public remarks, docs/usage.md and the spec restate this number for consumers, and the
-            // boundary tests below use the literal, so lowering the constant cannot pass silently.
+            // The constant is the source of truth (its comment carries the rationale and the source);
+            // the boundary tests below use the literal on purpose, so lowering it cannot pass silently.
             TelemetryUserContext.MaxAuthenticatedUserIdLength.Should().Be(1024);
         }
 

@@ -5,11 +5,19 @@ namespace Uno.DevTools.Telemetry.Tests
 {
     /// <summary>
     /// The WASM sender receives the authenticated user id that <see cref="Telemetry"/> captured at
-    /// the tracking call; it never reads the ambient store itself, so these tests need no reset.
+    /// the tracking call and never reads the ambient store itself; the last test sets the store to
+    /// prove exactly that.
     /// </summary>
     [TestClass]
+    [DoNotParallelize] // Mutates the process-wide ambient authenticated user id.
     public class WasmHttpSenderAuthenticatedUserTests
     {
+        [TestCleanup]
+        public void Cleanup()
+        {
+            TelemetryUserContext.AuthenticatedUserId = null;
+        }
+
         private static Dictionary<string, string> GetTags(object envelope)
         {
             using var document = JsonDocument.Parse(JsonSerializer.Serialize(envelope));
@@ -87,20 +95,13 @@ namespace Uno.DevTools.Telemetry.Tests
         {
             // Arrange: the sender must not consult the ambient store at envelope time.
             var sender = new WasmHttpSender("test-key", "test-prefix");
-            try
-            {
-                TelemetryUserContext.AuthenticatedUserId = "user-late";
+            TelemetryUserContext.AuthenticatedUserId = "user-late";
 
-                // Act
-                var envelope = sender.CreateEventEnvelope("test-event", null, null, "machine-1", "session-1", null);
+            // Act
+            var envelope = sender.CreateEventEnvelope("test-event", null, null, "machine-1", "session-1", null);
 
-                // Assert
-                GetTags(envelope).Should().NotContainKey("ai.user.authUserId");
-            }
-            finally
-            {
-                TelemetryUserContext.AuthenticatedUserId = null;
-            }
+            // Assert
+            GetTags(envelope).Should().NotContainKey("ai.user.authUserId");
         }
     }
 }

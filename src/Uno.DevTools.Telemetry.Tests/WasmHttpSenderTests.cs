@@ -178,12 +178,13 @@ namespace Uno.DevTools.Telemetry.Tests
 				IDictionary<string, string>? properties,
 				IDictionary<string, double>? measurements,
 				string machineId,
-				string? sessionId)
+				string? sessionId,
+				string? authenticatedUserId = null)
 			{
 				var method = _type.GetMethod("SendEventAsync");
 				Assert.IsNotNull(method, "SendEventAsync method should exist");
 
-				var task = method.Invoke(_instance, new object?[] { eventName, properties, measurements, machineId, sessionId }) as Task;
+				var task = method.Invoke(_instance, new object?[] { eventName, properties, measurements, machineId, sessionId, authenticatedUserId }) as Task;
 				Assert.IsNotNull(task, "SendEventAsync should return a Task");
 
 				await task;
@@ -195,12 +196,13 @@ namespace Uno.DevTools.Telemetry.Tests
 				IDictionary<string, string>? properties,
 				IDictionary<string, double>? measurements,
 				string machineId,
-				string? sessionId)
+				string? sessionId,
+				string? authenticatedUserId = null)
 			{
 				var method = _type.GetMethod("SendExceptionAsync");
 				Assert.IsNotNull(method, "SendExceptionAsync method should exist");
 
-				var task = method.Invoke(_instance, new object?[] { exception, severity, properties, measurements, machineId, sessionId }) as Task;
+				var task = method.Invoke(_instance, new object?[] { exception, severity, properties, measurements, machineId, sessionId, authenticatedUserId }) as Task;
 				Assert.IsNotNull(task, "SendExceptionAsync should return a Task");
 
 				await task;

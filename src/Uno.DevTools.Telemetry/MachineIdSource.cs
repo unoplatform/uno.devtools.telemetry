@@ -31,6 +31,7 @@ namespace Uno.DevTools.Telemetry
             [0x00, 0x05, 0x9A, 0x3C, 0x7A, 0x00], // Cisco AnyConnect / Secure Client
             [0x00, 0x09, 0x0F, 0xFE, 0x00, 0x01], // FortiClient
             [0x02, 0x50, 0x41, 0x00, 0x00, 0x01], // GlobalProtect
+            [0xAC, 0xDE, 0x48, 0x00, 0x11, 0x22], // Apple T2 bridge (iBridge) on Intel Macs
         ];
 
         private static readonly Lazy<HashSet<string>> SharedMachineIds = new Lazy<HashSet<string>>(BuildSharedMachineIds);

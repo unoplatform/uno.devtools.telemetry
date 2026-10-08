@@ -48,6 +48,7 @@ namespace Uno.DevTools.Telemetry.Tests
         [DataRow("00059A3C7A00", DisplayName = "Cisco AnyConnect")]
         [DataRow("00090FFE0001", DisplayName = "FortiClient")]
         [DataRow("025041000001", DisplayName = "GlobalProtect")]
+        [DataRow("ACDE48001122", DisplayName = "Apple T2 bridge on Intel Macs")]
         public void Given_AddressNotUniqueToAMachine_When_Checked_Then_IsRejected(string address)
         {
             MachineIdSource.IsUniqueAddress(Convert.FromHexString(address)).Should().BeFalse();
@@ -134,6 +135,7 @@ namespace Uno.DevTools.Telemetry.Tests
         [DataRow("5cb1a4bd4d6c285bf7e36c9bb18d95e7", DisplayName = "025041000001: GlobalProtect")]
         [DataRow("7fea0dbc3b921d3455e683dd69b461c9", DisplayName = "0A002700000A: VirtualBox host-only adapter")]
         [DataRow("f33b49c114f516088a96c26f81a959fe", DisplayName = "00090FFE0001: FortiClient")]
+        [DataRow("28ca43a1725b799384358ad467cd510f", DisplayName = "ACDE48001122: Apple T2 bridge")]
         public void Given_IdStoredForASharedAddress_When_Checked_Then_IsShared(string machineId)
         {
             // These are the ids earlier versions stored for those addresses. The literals are pinned on

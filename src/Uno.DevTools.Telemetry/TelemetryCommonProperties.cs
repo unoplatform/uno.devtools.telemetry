@@ -34,15 +34,18 @@ namespace Uno.DevTools.Telemetry
             string storageDirectoryPath,
             Assembly versionAssembly,
             string productName,
-            Func<string>? getCurrentDirectory = null)
+            Func<string>? getCurrentDirectory = null,
+            Func<IEnumerable<NetworkInterface>>? getNetworkInterfaces = null)
         {
             _getCurrentDirectory = getCurrentDirectory ?? Directory.GetCurrentDirectory;
+            _getNetworkInterfaces = getNetworkInterfaces ?? NetworkInterface.GetAllNetworkInterfaces;
             _storageDirectoryPath = storageDirectoryPath;
             _versionAssembly = versionAssembly;
             _productName = productName;
         }
 
         private readonly Func<string> _getCurrentDirectory;
+        private readonly Func<IEnumerable<NetworkInterface>> _getNetworkInterfaces;
         private readonly string _storageDirectoryPath;
         private readonly Assembly _versionAssembly;
         private readonly string _productName;
@@ -138,7 +141,10 @@ namespace Uno.DevTools.Telemetry
 
             if (File.Exists(machineHashPath))
             {
-                if (File.ReadAllText(machineHashPath) is { Length: 32 /* hash */ or 36 /* guid */ } readHash)
+                // An id hashed from an address many machines share was stored by an earlier version of
+                // this package; replace it so that this machine gets an id of its own.
+                if (File.ReadAllText(machineHashPath) is { Length: 32 /* hash */ or 36 /* guid */ } readHash
+                    && !MachineIdSource.IsSharedMachineId(readHash))
                 {
                     return readHash;
                 }
@@ -147,12 +153,9 @@ namespace Uno.DevTools.Telemetry
             string? hash = null;
             try
             {
-                var macAddr =
-                (
-                    from nic in NetworkInterface.GetAllNetworkInterfaces()
-                    where nic.OperationalStatus == OperationalStatus.Up
-                    select nic.GetPhysicalAddress().ToString()
-                ).FirstOrDefault();
+                // Without an address unique to this machine, a random id is hashed and stored instead, so
+                // that it stays the same across runs like an address-based one.
+                var macAddr = MachineIdSource.GetUniqueAddress(_getNetworkInterfaces);
 
                 hash = HashBuilder.Build(macAddr ?? Guid.NewGuid().ToString());
 
@@ -165,7 +168,7 @@ namespace Uno.DevTools.Telemetry
             }
             catch (Exception e)
             {
-                Debug.Fail($"Failed to get Mac address: {e}");
+                Debug.Fail($"Failed to compute or store the machine id: {e}");
 
                 // if the hash was set, but the write failed, let's continue.
                 hash ??= Guid.NewGuid().ToString();

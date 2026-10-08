@@ -195,7 +195,7 @@ When running on WebAssembly, the telemetry library automatically detects the WAS
 | Aspect | WASM Behavior | Other Platforms |
 |--------|---------------|-----------------|
 | **API** | Identical - same methods and signatures | Same |
-| **Machine ID** | Session-specific GUID (regenerated each page load) | Persistent hash based on MAC address |
+| **Machine ID** | Session-specific GUID (regenerated each page load) | Persistent hash of the first manufacturer-assigned MAC address; when the machine exposes none (iOS, Android, or only loopback, VPN, VM or randomized Wi-Fi addresses), a hash of a random GUID stored on first use |
 | **Persistence** | In-memory only (lost on page refresh) | File-based persistence with retry |
 | **Performance** | Direct HTTP POST to Application Insights | Application Insights SDK with batching |
 | **Threading** | Single-threaded (no `Thread.Yield()`) | Multi-threaded with lock-free chaining |

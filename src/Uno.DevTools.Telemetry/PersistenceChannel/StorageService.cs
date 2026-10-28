@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.ApplicationInsights.Channel;
@@ -43,6 +44,26 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		internal static readonly TimeSpan MaxRetryDuration = TimeSpan.FromHours(2);
 		
 		private readonly FixedSizeQueue<string> _deletedFilesQueue = new FixedSizeQueue<string>(10);
+
+		/// <summary>
+		///     Sharing that makes an open file exclusive while still letting its holder delete it. On Windows, not sharing
+		///     read and write access keeps every other open out. Elsewhere, .NET takes an exclusive lock for
+		///     <see cref="FileShare.None" />, and deleting a file doesn't depend on its sharing.
+		/// </summary>
+		private static readonly FileShare ClaimShare = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+			? FileShare.Delete
+			: FileShare.None;
+
+		/// <summary>
+		///     Files this storage holds open, by name. While a file is held, no other sender can claim it.
+		/// </summary>
+		private readonly Dictionary<string, FileStream> _claims = new Dictionary<string, FileStream>();
+
+		/// <summary>
+		///     Claimed files that were sent or dropped but could not be deleted. They stay held, so that no sender sends
+		///     them again, until their deletion succeeds.
+		/// </summary>
+		private readonly HashSet<string> _undeletedClaims = new HashSet<string>();
 
 		private readonly object _peekLockObj = new object();
 		private readonly object _storageFolderLock = new object();
@@ -138,6 +159,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		///     Reads an item from the storage. Order is Last-In-First-Out.
 		///     When the Transmission is no longer needed (it was either sent or failed with a non-retryable error) it should be
 		///     disposed.
+		///     Its file is claimed until then, so that no other sender sharing the folder (in this process or another) sends it too.
 		/// </summary>
 		internal override StorageTransmission? Peek()
 		{
@@ -147,20 +169,27 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				lock (_peekLockObj)
 				{
+					DeleteUndeletedClaims();
+
 					foreach (var file in files)
 					{
 						try
 						{
 							// if a file was peeked before, skip it (wait until it is disposed).  
 							if (PeekedTransmissions.ContainsKey(file) == false &&
-								_deletedFilesQueue.Contains(file) == false)
+								_deletedFilesQueue.Contains(file) == false &&
+								TryClaim(file))
 							{
 								// Load the transmission from disk.
 								var storageTransmissionItem = LoadTransmissionFromFileAsync(file)
 									.ConfigureAwait(false).GetAwaiter().GetResult();
 
-								// when item is disposed it should be removed from the peeked list.
-								storageTransmissionItem.Disposing = item => OnPeekedItemDisposed(file);
+								// when item is disposed it should be removed from the peeked list, and its file released.
+								storageTransmissionItem.Disposing = item =>
+								{
+									OnPeekedItemDisposed(file);
+									ReleaseClaim(file);
+								};
 
 								// add the transmission to the list.
 								PeekedTransmissions.Add(file, storageTransmissionItem.FullFilePath);
@@ -176,12 +205,99 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 							
 							// Quarantine corrupted files by renaming to .corrupt
 							RenameToCorrupted(file);
+							ReleaseClaim(file);
 						}
 					}
 				}
 			}
 
 			return null;
+		}
+
+		/// <summary>
+		///     Opens a queued file exclusively, and keeps it open until its transmission is disposed: meanwhile no other
+		///     sender can open it, so only one sends it. A file this process can't open for writing (e.g. one owned by
+		///     another user) is not ours to send.
+		/// </summary>
+		private bool TryClaim(string file)
+		{
+			var storageFolder = StorageFolder;
+			if (storageFolder is null)
+			{
+				return false;
+			}
+
+			var path = Path.Combine(storageFolder, file);
+			FileStream? claim = null;
+			try
+			{
+				claim = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, ClaimShare);
+
+				// Outside Windows the lock is taken just after the file is opened: its previous holder may have sent and
+				// deleted it in between.
+				if (File.Exists(path))
+				{
+					lock (_claims)
+					{
+						_claims[file] = claim;
+					}
+
+					return true;
+				}
+			}
+			catch (IOException)
+			{
+				// Claimed by another sender, or already sent and deleted
+			}
+			catch (Exception e)
+			{
+				PersistenceChannelDebugLog.WriteException(e, "Failed to claim a file. file: {0}", file);
+			}
+
+			claim?.Dispose();
+			return false;
+		}
+
+		/// <summary>
+		///     Closes a claimed file, which returns it to the queue unless it was deleted.
+		/// </summary>
+		private void ReleaseClaim(string file)
+		{
+			lock (_claims)
+			{
+				if (!_undeletedClaims.Contains(file) && _claims.TryGetValue(file, out var claim))
+				{
+					claim.Dispose();
+					_claims.Remove(file);
+				}
+			}
+		}
+
+		private void DeleteUndeletedClaims()
+		{
+			var storageFolder = StorageFolder;
+			if (storageFolder is null)
+			{
+				return;
+			}
+
+			lock (_claims)
+			{
+				foreach (var file in _undeletedClaims.ToArray())
+				{
+					try
+					{
+						DeleteFileWithRetry(Path.Combine(storageFolder, file));
+
+						_undeletedClaims.Remove(file);
+						ReleaseClaim(file);
+					}
+					catch (Exception e)
+					{
+						PersistenceChannelDebugLog.WriteException(e, "Failed to delete a sent file. file: {0}", file);
+					}
+				}
+			}
 		}
 
 		internal override void Delete(StorageTransmission item)
@@ -230,6 +346,18 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				// Catch all exceptions including IOException, UnauthorizedAccessException, etc.
 				// Telemetry operations must never crash the host app.
 				PersistenceChannelDebugLog.WriteException(e, "Failed to delete a file. file: {0}", item == null ? "null" : item.FullFilePath);
+
+				// It was sent (or dropped) already: keep it claimed so that it's not sent again, and retry the deletion later.
+				if (item is not null)
+				{
+					lock (_claims)
+					{
+						if (_claims.ContainsKey(item.FileName))
+						{
+							_undeletedClaims.Add(item.FileName);
+						}
+					}
+				}
 			}
 		}
 		
@@ -359,11 +487,19 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					throw new InvalidOperationException("The storage folder is not defined");
 				}
 
-				// FileShare.ReadWrite allows other processes to read/write while we're reading
-				// FileShare.Delete allows other processes to delete while we're reading
-				// This supports multiple processes accessing the same storage folder
-				using (Stream stream = File.Open(Path.Combine(StorageFolder, file), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+				// A claimed file can't be opened again, even by this process: read it through its claim, which stays open
+				// (reading from the transmission's stream disposes it).
+				FileStream claim;
+				lock (_claims)
 				{
+					claim = _claims[file];
+				}
+
+				using (Stream stream = new MemoryStream())
+				{
+					await claim.CopyToAsync(stream).ConfigureAwait(false);
+					stream.Position = 0;
+
 					var storageTransmissionItem =
 						await StorageTransmission.CreateFromStreamAsync(stream, file).ConfigureAwait(false);
 					return storageTransmissionItem;
@@ -438,11 +574,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				if (StorageFolder is not null)
 				{
-					// FileShare.ReadWrite | FileShare.Delete allows concurrent access from other processes
-					using (var stream = File.Open(Path.Combine(StorageFolder, file), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-					{
-						return stream.Length;
-					}
+					// Read from the file system metadata: a claimed file can't be opened
+					return new FileInfo(Path.Combine(StorageFolder, file)).Length;
 				}
 			}
 			catch (Exception e)
@@ -461,11 +594,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			try
 			{
-				// FileShare.ReadWrite | FileShare.Delete allows concurrent access from other processes
-				using (var stream = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
-				{
-					return stream.Length;
-				}
+				// Read from the file system metadata: a claimed file can't be opened
+				return new FileInfo(filePath).Length;
 			}
 			catch (Exception e)
 			{

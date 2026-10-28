@@ -116,19 +116,17 @@ namespace Uno.DevTools.Telemetry.Tests
 			storage.EnqueueAsync(CreateTransmission()).GetAwaiter().GetResult();
 			var transmission = storage.Peek()!;
 
+			// Act - the transmission was sent, but its file can't be removed, and then its sender lets go of it
 			using (DenyDelete(storageDir, transmission.FileName))
 			{
-				// Act - the transmission was sent, but its file can't be removed
 				storage.Delete(transmission);
 				transmission.Dispose();
-
-				// Assert
-				storage.Peek().Should().BeNull("this storage already sent it");
-				other.Peek().Should().BeNull("another storage must not send it either");
 			}
 
-			storage.Peek().Should().BeNull();
-			Directory.GetFiles(storageDir).Should().BeEmpty("the deletion is retried once it can succeed");
+			// Assert
+			other.Peek().Should().BeNull("another storage must not send it again");
+			storage.Peek().Should().BeNull("this storage already sent it");
+			Directory.GetFiles(storageDir, "*.trn").Should().BeEmpty("it is no longer queued");
 		}
 
 		[TestMethod]

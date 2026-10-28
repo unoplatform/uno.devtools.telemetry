@@ -59,12 +59,6 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		private readonly Dictionary<string, FileStream> _claims = new Dictionary<string, FileStream>();
 
-		/// <summary>
-		///     Claimed files that were sent or dropped but could not be deleted. They stay held, so that no sender sends
-		///     them again, until their deletion succeeds.
-		/// </summary>
-		private readonly HashSet<string> _undeletedClaims = new HashSet<string>();
-
 		private readonly object _peekLockObj = new object();
 		private readonly object _storageFolderLock = new object();
 		private string? _storageDirectoryPath;
@@ -169,8 +163,6 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				lock (_peekLockObj)
 				{
-					DeleteUndeletedClaims();
-
 					foreach (var file in files)
 					{
 						try
@@ -249,6 +241,10 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			{
 				// Claimed by another sender, or already sent and deleted
 			}
+			catch (UnauthorizedAccessException)
+			{
+				// Not ours to send, e.g. another user's file
+			}
 			catch (Exception e)
 			{
 				// Deliberately generic: whatever the failure, the file isn't ours to send. Escaping would reach the catch in
@@ -267,7 +263,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			lock (_claims)
 			{
-				if (!_undeletedClaims.Contains(file) && _claims.TryGetValue(file, out var claim))
+				if (_claims.TryGetValue(file, out var claim))
 				{
 					claim.Dispose();
 					_claims.Remove(file);
@@ -275,30 +271,24 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			}
 		}
 
-		private void DeleteUndeletedClaims()
+		/// <summary>
+		///     Empties a claimed file that was sent (or dropped) but could not be deleted: once released, whoever finds it
+		///     next quarantines it as corrupt instead of sending it again.
+		/// </summary>
+		private void EmptyClaimedFile(string file)
 		{
-			var storageFolder = StorageFolder;
-			if (storageFolder is null)
-			{
-				return;
-			}
-
 			lock (_claims)
 			{
-				foreach (var file in _undeletedClaims.ToArray())
+				if (_claims.TryGetValue(file, out var claim))
 				{
 					try
 					{
-						DeleteFileWithRetry(Path.Combine(storageFolder, file));
-
-						_undeletedClaims.Remove(file);
-						ReleaseClaim(file);
+						claim.SetLength(0);
 					}
 					catch (Exception e)
 					{
-						// Deliberately generic: one file failing must not stop the others from being deleted, and escaping
-						// would fail every Peek, which stops sending altogether.
-						PersistenceChannelDebugLog.WriteException(e, "Failed to delete a sent file. file: {0}", file);
+						// Deliberately generic: telemetry must never throw into the host
+						PersistenceChannelDebugLog.WriteException(e, "Failed to empty a sent file. file: {0}", file);
 					}
 				}
 			}
@@ -351,16 +341,9 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 				// Telemetry operations must never crash the host app.
 				PersistenceChannelDebugLog.WriteException(e, "Failed to delete a file. file: {0}", item == null ? "null" : item.FullFilePath);
 
-				// It was sent (or dropped) already: keep it claimed so that it's not sent again, and retry the deletion later.
 				if (item is not null)
 				{
-					lock (_claims)
-					{
-						if (_claims.ContainsKey(item.FileName))
-						{
-							_undeletedClaims.Add(item.FileName);
-						}
-					}
+					EmptyClaimedFile(item.FileName);
 				}
 			}
 		}
@@ -491,8 +474,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					throw new InvalidOperationException("The storage folder is not defined");
 				}
 
-				// A claimed file can't be opened again, even by this process: read it through its claim, which stays open
-				// (reading from the transmission's stream disposes it).
+				// A claimed file can't be opened again, even by this process: read it through its claim. CreateFromStreamAsync
+				// disposes the stream it reads, so it reads a copy and the claim stays open.
 				FileStream claim;
 				lock (_claims)
 				{

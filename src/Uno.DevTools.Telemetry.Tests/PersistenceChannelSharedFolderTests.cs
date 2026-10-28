@@ -40,7 +40,7 @@ namespace Uno.DevTools.Telemetry.Tests
 				{
 					Directory.Delete(dir, true);
 				}
-				catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+				catch
 				{
 					// Best effort cleanup
 				}
@@ -281,7 +281,7 @@ namespace Uno.DevTools.Telemetry.Tests
 					{
 						client = await _listener.AcceptTcpClientAsync().ConfigureAwait(false);
 					}
-					catch (Exception e) when (e is ObjectDisposedException or SocketException)
+					catch (Exception)
 					{
 						return; // Stopped
 					}

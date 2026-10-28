@@ -25,7 +25,7 @@ namespace Uno.DevTools.Telemetry.Tests
 
 		private string GetTempStorageDirectory()
 		{
-			var dir = Path.Combine(Path.GetTempPath(), $"telemetry_shared_test_{Guid.NewGuid():N}");
+			var dir = Path.Join(Path.GetTempPath(), $"telemetry_shared_test_{Guid.NewGuid():N}");
 			_directoriesToCleanup.Add(dir);
 			Directory.CreateDirectory(dir);
 			return dir;
@@ -95,14 +95,14 @@ namespace Uno.DevTools.Telemetry.Tests
 
 			// Act
 			StorageTransmission? peeked;
-			using (DenyWrite(Path.Combine(storageDir, file)))
+			using (DenyWrite(Path.Join(storageDir, file)))
 			{
 				peeked = storage.Peek();
 			}
 
 			// Assert
 			peeked.Should().BeNull("a sender that can't claim a file must not send it");
-			File.Exists(Path.Combine(storageDir, file)).Should().BeTrue("the file is still queued for a sender that can claim it");
+			File.Exists(Path.Join(storageDir, file)).Should().BeTrue("the file is still queued for a sender that can claim it");
 			Directory.GetFiles(storageDir, "*.corrupt").Should().BeEmpty();
 		}
 
@@ -209,14 +209,14 @@ namespace Uno.DevTools.Telemetry.Tests
 		{
 			if (OperatingSystem.IsWindows())
 			{
-				return DenyWrite(Path.Combine(storageDir, file));
+				return DenyWrite(Path.Join(storageDir, file));
 			}
 
 			var mode = File.GetUnixFileMode(storageDir);
 			File.SetUnixFileMode(storageDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
 			return EnforcedOrInconclusive(
 				new DisposableAction(() => File.SetUnixFileMode(storageDir, mode)),
-				() => File.Create(Path.Combine(storageDir, "probe")).Dispose());
+				() => File.Create(Path.Join(storageDir, "probe")).Dispose());
 		}
 
 		private static IDisposable EnforcedOrInconclusive(IDisposable restore, Action probe)

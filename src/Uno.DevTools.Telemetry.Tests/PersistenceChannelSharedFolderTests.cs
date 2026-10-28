@@ -281,7 +281,7 @@ namespace Uno.DevTools.Telemetry.Tests
 					{
 						client = await _listener.AcceptTcpClientAsync().ConfigureAwait(false);
 					}
-					catch (Exception)
+					catch (Exception e) when (e is ObjectDisposedException or SocketException)
 					{
 						return; // Stopped
 					}

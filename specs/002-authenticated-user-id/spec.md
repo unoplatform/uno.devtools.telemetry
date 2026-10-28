@@ -167,7 +167,7 @@ after the value was set.
   NOT treat `user_AuthenticatedId` as verified identity for authorization, abuse, or billing
   decisions.
 - **Deferred transmission**: the desktop offline channel persists unsent items under
-  `Path.GetTempPath()/.uno/telemetry` and retransmits them in a later run. Tags are serialized into
+  `Path.GetTempPath()/.uno/telemetry/outbox` and retransmits them in a later run. Tags are serialized into
   the persisted item, so a retransmitted item carries the identity that was valid when it was
   tracked, even if that user has since signed out or another user has signed in, and downgrading
   the package does not stop them. Consumers with data-deletion obligations for that at-rest window

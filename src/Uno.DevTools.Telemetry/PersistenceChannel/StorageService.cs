@@ -251,6 +251,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			}
 			catch (Exception e)
 			{
+				// Deliberately generic: whatever the failure, the file isn't ours to send. Escaping would reach the catch in
+				// Peek, which quarantines the file as corrupt.
 				PersistenceChannelDebugLog.WriteException(e, "Failed to claim a file. file: {0}", file);
 			}
 
@@ -294,6 +296,8 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					}
 					catch (Exception e)
 					{
+						// Deliberately generic: one file failing must not stop the others from being deleted, and escaping
+						// would fail every Peek, which stops sending altogether.
 						PersistenceChannelDebugLog.WriteException(e, "Failed to delete a sent file. file: {0}", file);
 					}
 				}

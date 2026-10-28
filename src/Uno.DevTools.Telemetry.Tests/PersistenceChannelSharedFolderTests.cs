@@ -40,7 +40,7 @@ namespace Uno.DevTools.Telemetry.Tests
 				{
 					Directory.Delete(dir, true);
 				}
-				catch
+				catch (Exception e) when (e is IOException or UnauthorizedAccessException)
 				{
 					// Best effort cleanup
 				}
@@ -138,42 +138,35 @@ namespace Uno.DevTools.Telemetry.Tests
 			const int EventCount = 20;
 			var storageDir = GetTempStorageDirectory();
 			using var endpoint = new CountingHttpEndpoint();
-			var channels = Enumerable.Range(0, 3)
-				.Select(_ => new PersistenceChannel.PersistenceChannel(storageDir)
-				{
-					EndpointAddress = endpoint.Address,
-					SendingInterval = TimeSpan.FromMilliseconds(1),
-				})
-				.ToArray();
+			using var trackingChannel = CreateChannel(storageDir, endpoint.Address);
+			using var idleChannel1 = CreateChannel(storageDir, endpoint.Address);
+			using var idleChannel2 = CreateChannel(storageDir, endpoint.Address);
 
-			try
+			// Act
+			for (var i = 0; i < EventCount; i++)
 			{
-				// Act
-				for (var i = 0; i < EventCount; i++)
-				{
-					channels[0].Send(new EventTelemetry($"event-{i}"));
-				}
-
-				var drained = await WaitUntilAsync(
-					() => endpoint.RequestCount >= EventCount && Directory.GetFiles(storageDir).Length == 0,
-					TimeSpan.FromSeconds(30),
-					DefaultPollInterval).ConfigureAwait(false);
-
-				// Give a sender that read a file before it was deleted the time to post its copy
-				await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
-
-				// Assert
-				drained.Should().BeTrue("every event should be sent and its file deleted");
-				endpoint.RequestCount.Should().Be(EventCount, "each event must be posted exactly once");
+				trackingChannel.Send(new EventTelemetry($"event-{i}"));
 			}
-			finally
-			{
-				foreach (var channel in channels)
-				{
-					channel.Dispose();
-				}
-			}
+
+			var drained = await WaitUntilAsync(
+				() => endpoint.RequestCount >= EventCount && Directory.GetFiles(storageDir).Length == 0,
+				TimeSpan.FromSeconds(30),
+				DefaultPollInterval).ConfigureAwait(false);
+
+			// Give a sender that read a file before it was deleted the time to post its copy
+			await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+
+			// Assert
+			drained.Should().BeTrue("every event should be sent and its file deleted");
+			endpoint.RequestCount.Should().Be(EventCount, "each event must be posted exactly once");
 		}
+
+		private static PersistenceChannel.PersistenceChannel CreateChannel(string storageDir, string endpointAddress)
+			=> new PersistenceChannel.PersistenceChannel(storageDir)
+			{
+				EndpointAddress = endpointAddress,
+				SendingInterval = TimeSpan.FromMilliseconds(1),
+			};
 
 		private static StorageService CreateStorage(string storageDir)
 		{

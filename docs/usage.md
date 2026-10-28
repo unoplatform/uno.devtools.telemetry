@@ -129,12 +129,14 @@ If attribution must be turned off without a code change:
   `Trace.Listeners.Add(new TextWriterTraceListener(path))`; the default listener only reaches an
   attached debugger.
 - Rolling back: the desktop channel persists unsent items under
-  `Path.GetTempPath()/.uno/telemetry/outbox` (older versions of the package use
-  `Path.GetTempPath()/.uno/telemetry`) and retransmits them on a later run, with the tags they
-  were stamped with. Downgrading the package does not stop already-stamped items from being sent;
-  delete the pending files in those directories before restarting if they must not leave the machine.
-  On Linux, and on macOS without `TMPDIR`, that directory is the shared `/tmp`, so while a user is
-  signed in the pending files identify the account to other local users.
+  `Path.GetTempPath()/.uno/telemetry/outbox` and retransmits them on a later run, with the tags they
+  were stamped with. Older versions of the package use `Path.GetTempPath()/.uno/telemetry` instead
+  and never read `outbox`: items they queued stay there until an older version sends them, and items
+  left in `outbox` after a downgrade are sent by any process on the machine still on a newer version.
+  Downgrading the package does not stop already-stamped items from being sent; delete the pending
+  files in both directories before restarting if they must not leave the machine.
+  On Linux, and on macOS without `TMPDIR`, both directories are under the shared `/tmp`, so while a
+  user is signed in the pending files identify the account to other local users.
 
 ### File-based Telemetry
 By default, telemetry is persisted locally before being sent. You can configure the storage location and behavior by customizing the `Telemetry` constructor.

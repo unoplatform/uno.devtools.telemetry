@@ -245,7 +245,9 @@ namespace Uno.DevTools.Telemetry
                 }
 
                 // Non-WASM path: Existing implementation unchanged
-                _storageDirectoryPath = Path.Combine(Path.GetTempPath(), ".uno", "telemetry");
+                // Older versions of this library send whatever is queued in ".uno/telemetry" without claiming it first,
+                // so the queue lives in a subfolder they never look into.
+                _storageDirectoryPath = Path.Combine(Path.GetTempPath(), ".uno", "telemetry", "outbox");
 
                 // Store the settings on in the user profile for linux
                 if (Microsoft.DotNet.PlatformAbstractions.RuntimeEnvironment.OperatingSystemPlatform == Platform.Linux)

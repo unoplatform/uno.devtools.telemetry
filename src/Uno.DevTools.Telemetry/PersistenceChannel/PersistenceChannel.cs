@@ -87,8 +87,11 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 			set
 			{
-				var address = value ?? TelemetryServiceEndpoint;
-				_flushManager.EndpointAddress = new Uri(address);
+				var address = new Uri(value ?? TelemetryServiceEndpoint);
+				_flushManager.EndpointAddress = address;
+
+				// Queued items are sent here too, whatever address their file names
+				_storage.EndpointAddress = address;
 			}
 		}
 

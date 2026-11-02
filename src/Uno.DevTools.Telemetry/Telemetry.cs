@@ -245,12 +245,23 @@ namespace Uno.DevTools.Telemetry
                 }
 
                 // Non-WASM path: Existing implementation unchanged
-                // Older versions of this library send whatever is queued in ".uno/telemetry" without claiming it first,
-                // so the queue lives in a subfolder they never look into.
-                _storageDirectoryPath = Path.Combine(Path.GetTempPath(), ".uno", "telemetry", "outbox");
+                var isLinux = Microsoft.DotNet.PlatformAbstractions.RuntimeEnvironment.OperatingSystemPlatform == Platform.Linux;
+                _storageDirectoryPath = QueueDirectory.GetPath(
+                    isLinux,
+                    Environment.GetEnvironmentVariable("XDG_CACHE_HOME"),
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    Path.GetTempPath());
+
+                if (_storageDirectoryPath is null && _channelOverride is null)
+                {
+                    // No folder of the user's own to queue in (see QueueDirectory), so nothing could be sent.
+                    TelemetryDiagnostics.Write("Telemetry is disabled for this instance: the user has no home folder to queue it in.");
+                    _machineIdTcs.TrySetResult(null);
+                    return;
+                }
 
                 // Store the settings on in the user profile for linux
-                if (Microsoft.DotNet.PlatformAbstractions.RuntimeEnvironment.OperatingSystemPlatform == Platform.Linux)
+                if (isLinux)
                 {
                     _settingsStorageDirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".uno", "telemetry");
                 }

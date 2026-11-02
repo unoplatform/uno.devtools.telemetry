@@ -14,7 +14,8 @@ using Microsoft.ApplicationInsights.DataContracts;
 namespace Uno.DevTools.Telemetry.Tests
 {
 	/// <summary>
-	///     Several channels, in one process or many, share the same storage folder. Each transmission must be sent once.
+	///     Several channels, in one process or many, share the same storage folder. Each transmission must be sent once, and
+	///     a file someone else left in the folder must not decide what is sent, or where.
 	/// </summary>
 	[TestClass]
 	public class PersistenceChannelSharedFolderTests
@@ -159,6 +160,112 @@ namespace Uno.DevTools.Telemetry.Tests
 			endpoint.RequestCount.Should().Be(EventCount, "each event must be posted exactly once");
 		}
 
+		[TestMethod]
+		public async Task Given_QueuedFileNamingAnotherAddress_When_Sent_Then_ItGoesToTheConfiguredEndpoint()
+		{
+			// Arrange - a file left in the folder by someone else, naming an address of their choosing
+			var storageDir = GetTempStorageDirectory();
+			using var configured = new CountingHttpEndpoint();
+			using var planted = new CountingHttpEndpoint();
+			using var channel = CreateChannel(storageDir, configured.Address);
+			WriteQueuedFile(storageDir, planted.Address);
+
+			// Act
+			var sent = await WaitUntilAsync(
+				() => configured.RequestCount + planted.RequestCount >= 1 && Directory.GetFiles(storageDir, "*.trn").Length == 0,
+				TimeSpan.FromSeconds(30),
+				DefaultPollInterval).ConfigureAwait(false);
+
+			// Assert
+			sent.Should().BeTrue("the queued file should be sent and deleted");
+			planted.RequestCount.Should().Be(0, "a queued file must not choose where it is sent");
+			configured.RequestCount.Should().Be(1);
+		}
+
+		[TestMethod]
+		public void Given_NoStorageFolder_When_Used_Then_OnlyTheCurrentUserCanOpenIt()
+		{
+			if (OperatingSystem.IsWindows())
+			{
+				Assert.Inconclusive("Unix file modes only.");
+				return;
+			}
+
+			// Arrange
+			var storageDir = Path.Join(GetTempStorageDirectory(), "telemetry", "outbox");
+			var storage = CreateStorage(storageDir);
+
+			// Act
+			storage.EnqueueAsync(CreateTransmission()).GetAwaiter().GetResult();
+
+			// Assert
+			File.GetUnixFileMode(storageDir).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+		}
+
+		[TestMethod]
+		public void Given_QueuedFileNamingAnotherAddress_When_Peek_Then_TheTransmissionGoesToTheStorageEndpoint()
+		{
+			// Arrange
+			var storageDir = GetTempStorageDirectory();
+			var storage = CreateStorage(storageDir);
+			storage.EndpointAddress = new Uri("https://configured.example/v2/track");
+			WriteQueuedFile(storageDir, "https://planted.example/collect");
+
+			// Act
+			using var peeked = storage.Peek();
+
+			// Assert
+			peeked.Should().NotBeNull();
+			peeked!.EndpointAddress.Should().Be(new Uri("https://configured.example/v2/track"));
+		}
+
+		[TestMethod]
+		public void Given_FileAnotherUserOwns_When_Peek_Then_ItIsSkippedAndLeftInPlace()
+		{
+			// Arrange - this process could open the other user's file, but it isn't theirs to send
+			var storageDir = GetTempStorageDirectory();
+			var othersFile = WriteQueuedFile(storageDir, "https://dc.services.visualstudio.com/v2/track");
+			var storage = CreateStorage(storageDir, isOwnedByCurrentUser: path => path != othersFile);
+			storage.EnqueueAsync(CreateTransmission()).GetAwaiter().GetResult();
+
+			// Act
+			using var peeked = storage.Peek();
+			using var peekedAgain = storage.Peek();
+
+			// Assert
+			peeked.Should().NotBeNull("the current user's own file is still sent");
+			peeked!.FileName.Should().NotBe(Path.GetFileName(othersFile));
+			peekedAgain.Should().BeNull("the other user's file must not be sent");
+			File.Exists(othersFile).Should().BeTrue("it is left for its owner");
+			Directory.GetFiles(storageDir, "*.corrupt").Should().BeEmpty();
+		}
+
+		[TestMethod]
+		public void Given_FileThisProcessCreated_When_OwnerIsChecked_Then_ItIsTheCurrentUsers()
+		{
+			var path = WriteQueuedFile(GetTempStorageDirectory(), "https://dc.services.visualstudio.com/v2/track");
+
+			FileOwner.IsCurrentUser(path).Should().BeTrue();
+		}
+
+		[TestMethod]
+		public void Given_FileRootOwns_When_OwnerIsCheckedOnLinux_Then_ItIsNotTheCurrentUsers()
+		{
+			if (!OperatingSystem.IsLinux())
+			{
+				Assert.Inconclusive("Only Linux reports a file's owner.");
+				return;
+			}
+
+			if (Environment.UserName == "root")
+			{
+				Assert.Inconclusive("The file checked belongs to root, which this process runs as.");
+				return;
+			}
+
+			FileOwner.IsCurrentUser("/").Should().BeFalse();
+		}
+
 		private static PersistenceChannel.PersistenceChannel CreateChannel(string storageDir, string endpointAddress)
 			=> new PersistenceChannel.PersistenceChannel(storageDir)
 			{
@@ -166,9 +273,9 @@ namespace Uno.DevTools.Telemetry.Tests
 				SendingInterval = TimeSpan.FromMilliseconds(1),
 			};
 
-		private static StorageService CreateStorage(string storageDir)
+		private static StorageService CreateStorage(string storageDir, Func<string, bool>? isOwnedByCurrentUser = null)
 		{
-			var storage = new StorageService();
+			var storage = new StorageService(isOwnedByCurrentUser);
 			storage.Init(storageDir);
 			return storage;
 		}
@@ -180,6 +287,26 @@ namespace Uno.DevTools.Telemetry.Tests
 				new byte[] { 1, 2, 3 },
 				"application/json",
 				"");
+		}
+
+		/// <summary>
+		///     Writes a queued file the way the storage does, naming <paramref name="address" /> as where it goes. It only gets
+		///     its queued name once complete, so that no sender reads it half written.
+		/// </summary>
+		private static string WriteQueuedFile(string storageDir, string address)
+		{
+			var name = Guid.NewGuid().ToString("N");
+			var tempPath = Path.Join(storageDir, name + ".tmp");
+			using (var stream = File.Create(tempPath))
+			{
+				StorageTransmission.SaveAsync(
+					new Transmission(new Uri(address), new byte[] { 1, 2, 3 }, "application/json", ""),
+					stream).GetAwaiter().GetResult();
+			}
+
+			var path = Path.Join(storageDir, DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) + "_" + name + ".trn");
+			File.Move(tempPath, path);
+			return path;
 		}
 
 		/// <summary>

@@ -59,6 +59,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		private readonly Dictionary<string, FileStream> _claims = new Dictionary<string, FileStream>();
 
+		private readonly Func<string, bool> _isOwnedByCurrentUser;
 		private readonly object _peekLockObj = new object();
 		private readonly object _storageFolderLock = new object();
 		private string? _storageDirectoryPath;
@@ -67,6 +68,15 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		private bool _storageFolderInitialized;
 		private long _storageSize;
 		private uint _transmissionsDropped;
+
+		/// <param name="isOwnedByCurrentUser">
+		///     Whether a queued file, by full path, belongs to the current user. <see cref="FileOwner.IsCurrentUser" /> unless a
+		///     test replaces it.
+		/// </param>
+		internal StorageService(Func<string, bool>? isOwnedByCurrentUser = null)
+		{
+			_isOwnedByCurrentUser = isOwnedByCurrentUser ?? FileOwner.IsCurrentUser;
+		}
 
 		/// <summary>
 		///     Gets the storage's folder name.
@@ -92,7 +102,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 								if (!Directory.Exists(_storageDirectoryPathUsed))
 								{
-									Directory.CreateDirectory(_storageDirectoryPathUsed);
+									CreatePrivateDirectory(_storageDirectoryPathUsed);
 								}
 							}
 							catch (Exception e)
@@ -108,6 +118,22 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 				return _storageDirectoryPathUsed;
 			}
+		}
+
+		/// <summary>
+		///     Creates a folder, and its missing parents, so that only the current user can open them (mode 0700) on Unix.
+		///     netstandard2.0 can't set a mode, so there, as on Windows, they get the platform's default permissions.
+		/// </summary>
+		private static void CreatePrivateDirectory(string path)
+		{
+#if NET7_0_OR_GREATER
+			if (!OperatingSystem.IsWindows())
+			{
+				Directory.CreateDirectory(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+				return;
+			}
+#endif
+			Directory.CreateDirectory(path);
 		}
 
 		internal override void Init(string? storageDirectoryPath)
@@ -209,7 +235,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// <summary>
 		///     Opens a queued file exclusively, and keeps it open until its transmission is disposed: meanwhile no other
 		///     sender can open it, so only one sends it. A file this process can't open for writing (e.g. one owned by
-		///     another user) is not ours to send.
+		///     another user) is not ours to send, nor is one another user owns even if we can.
 		/// </summary>
 		private bool TryClaim(string file)
 		{
@@ -223,6 +249,11 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			FileStream? claim = null;
 			try
 			{
+				if (!_isOwnedByCurrentUser(path))
+				{
+					return false;
+				}
+
 				claim = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, ClaimShare);
 
 				// Outside Windows the lock is taken just after the file is opened: its previous holder may have sent and
@@ -488,7 +519,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					stream.Position = 0;
 
 					var storageTransmissionItem =
-						await StorageTransmission.CreateFromStreamAsync(stream, file).ConfigureAwait(false);
+						await StorageTransmission.CreateFromStreamAsync(stream, file, EndpointAddress).ConfigureAwait(false);
 					return storageTransmissionItem;
 				}
 			}

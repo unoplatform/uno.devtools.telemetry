@@ -18,14 +18,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		private static readonly bool _isEnabled = IsEnabledByEnvironment();
 
 		private static bool IsEnabledByEnvironment()
-		{
-			if (bool.TryParse(Environment.GetEnvironmentVariable("UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT"), out var enabled))
-			{
-				return enabled;
-			}
-
-			return false;
-		}
+			=> TelemetryEnvironment.ParseFlag(Environment.GetEnvironmentVariable("UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT")) ?? false;
 
 		public static void WriteLine(string message)
 		{

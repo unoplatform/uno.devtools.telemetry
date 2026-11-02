@@ -14,14 +14,40 @@ namespace Uno.DevTools.Telemetry
         internal const string FileVariable = "UNO_PLATFORM_TELEMETRY_FILE";
 
         /// <summary>
-        /// Tri-state read of <c>UNO_PLATFORM_TELEMETRY_OPTOUT</c>: <see langword="true"/> or
-        /// <see langword="false"/> when the variable parses as a boolean, <see langword="null"/> when it
-        /// is unset or unparseable. The <see cref="Telemetry"/> constructor treats an explicit
-        /// <see langword="false"/> as forced-enable, overriding its <c>enabledProvider</c>, so the three
-        /// states must stay distinct here.
+        /// Tri-state read of <c>UNO_PLATFORM_TELEMETRY_OPTOUT</c>: <see langword="true"/> for any on value
+        /// <see cref="ParseFlag"/> recognises, <see langword="false"/> for the literal word <c>false</c>
+        /// only, <see langword="null"/> otherwise. The <see cref="Telemetry"/> constructor treats an
+        /// explicit <see langword="false"/> as forced-enable, overriding its <c>enabledProvider</c>, so the
+        /// three states must stay distinct here.
         /// </summary>
         internal static bool? GetOptOut()
-            => bool.TryParse(Environment.GetEnvironmentVariable(OptOutVariable), out var optedOut) ? optedOut : null;
+        {
+            var value = Environment.GetEnvironmentVariable(OptOutVariable);
+
+            return ParseFlag(value) switch
+            {
+                true => true,
+                // Forcing telemetry on over the product's own opt-out stays limited to the word it has
+                // always been, so 0, no and off read as unset and leave the decision to the product.
+                false when string.Equals(value?.Trim(), "false", StringComparison.OrdinalIgnoreCase) => false,
+                _ => null,
+            };
+        }
+
+        /// <summary>
+        /// Parses an on/off environment value: <c>1</c>, <c>true</c>, <c>yes</c> and <c>on</c> are
+        /// <see langword="true"/>; <c>0</c>, <c>false</c>, <c>no</c> and <c>off</c> are
+        /// <see langword="false"/>; case and surrounding whitespace are ignored. Anything else, empty
+        /// included, is <see langword="null"/>. <see cref="bool.TryParse(string, out bool)"/> is not used
+        /// because it rejects <c>1</c>, which the opt-out is documented to accept.
+        /// </summary>
+        internal static bool? ParseFlag(string? value)
+            => value?.Trim().ToUpperInvariant() switch
+            {
+                "1" or "TRUE" or "YES" or "ON" => true,
+                "0" or "FALSE" or "NO" or "OFF" => false,
+                _ => null,
+            };
 
         private static bool IsOptedOut() => GetOptOut() == true;
 

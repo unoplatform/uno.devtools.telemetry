@@ -90,8 +90,8 @@ namespace Uno.DevTools.Telemetry
             _channelOverride = channel;
             _wasmSenderOverride = wasmSender;
 
-            // An explicit true or false in the environment wins over the provider; unset or unparseable
-            // falls through to it.
+            // An opt-out value, or the literal false, in the environment wins over the provider; anything
+            // else falls through to it.
             if (TelemetryEnvironment.GetOptOut() is bool telemetryOptOut)
             {
                 Enabled = !telemetryOptOut;

@@ -77,13 +77,16 @@ public class TelemetryGenericDiTests
     }
 
     [TestMethod]
-    public void Given_OptOutSet_When_FileTelemetryRequestedThroughGenericDi_Then_NothingIsWrittenToDisk()
+    [DataRow("true")]
+    [DataRow("1")]
+    [DataRow(" Yes ")]
+    public void Given_OptOutSet_When_FileTelemetryRequestedThroughGenericDi_Then_NothingIsWrittenToDisk(string optOut)
     {
         // Arrange: an organisation-wide opt-out plus a developer's file redirect. The opt-out must win,
         // otherwise the authenticated user id lands on disk in cleartext despite the kill switch.
         var tempFile = _tempFiles.Create();
         Environment.SetEnvironmentVariable(TelemetryEnvironment.FileVariable, tempFile);
-        Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, "true");
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, optOut);
         TelemetryUserContext.AuthenticatedUserId = "user-42";
         IServiceCollection services = new ServiceCollection();
         services.AddTelemetry();
@@ -100,12 +103,15 @@ public class TelemetryGenericDiTests
     }
 
     [TestMethod]
-    public void Given_OptOutSet_When_FileTelemetryRequestedThroughAddTelemetryOverload_Then_NothingIsWrittenToDisk()
+    [DataRow("true")]
+    [DataRow("1")]
+    [DataRow(" Yes ")]
+    public void Given_OptOutSet_When_FileTelemetryRequestedThroughAddTelemetryOverload_Then_NothingIsWrittenToDisk(string optOut)
     {
         // Arrange: same guarantee for the non-generic registration, which selects the sink separately.
         var tempFile = _tempFiles.Create();
         Environment.SetEnvironmentVariable(TelemetryEnvironment.FileVariable, tempFile);
-        Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, "true");
+        Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, optOut);
         TelemetryUserContext.AuthenticatedUserId = "user-42";
         IServiceCollection services = new ServiceCollection();
         services.AddTelemetry("test-key", "test-prefix");

@@ -117,7 +117,8 @@ Notes:
 #### Operational suppression and diagnostics
 
 If attribution must be turned off without a code change:
-- `UNO_PLATFORM_TELEMETRY_OPTOUT=true` disables telemetry entirely, including the file-based lane
+- `UNO_PLATFORM_TELEMETRY_OPTOUT=1` (or `true`, `yes`, `on`; see [Environment Variables](#environment-variables))
+  disables telemetry entirely, including the file-based lane
   selected through `UNO_PLATFORM_TELEMETRY_FILE`, so the id is neither sent nor written to disk. A
   `FileTelemetry` instance the application constructs directly is not governed by the opt-out.
 - There is no switch that suppresses only the authenticated user id; an id assigned in code by
@@ -144,7 +145,7 @@ By default, telemetry is persisted locally before being sent. You can configure 
 ## Environment Variables
 | Variable | Purpose |
 | --- | --- |
-| `UNO_PLATFORM_TELEMETRY_OPTOUT` | Set to `true` to disable telemetry, including the file-based lane selected by `UNO_PLATFORM_TELEMETRY_FILE`. |
+| `UNO_PLATFORM_TELEMETRY_OPTOUT` | Set to `1`, `true`, `yes` or `on` to disable telemetry, including the file-based lane selected by `UNO_PLATFORM_TELEMETRY_FILE`. Only `false` explicitly keeps telemetry enabled, overriding the `enabledProvider` passed to the `Telemetry` constructor. Values are case-insensitive and surrounding whitespace is ignored. Any other value, including `0`, `no`, `off` and an empty one, counts as unset: `enabledProvider` decides, and telemetry is enabled when there is none. |
 | `UNO_PLATFORM_TELEMETRY_FILE` | When set, telemetry is logged to the specified file path using `FileTelemetry` instead of Application Insights. On .NET 8+, FileTelemetry uses `TimeProvider` for testable timestamps; on .NET Standard 2.0, it falls back to system time. |
 
 > [!NOTE]
@@ -228,7 +229,7 @@ telemetry.TrackException(exception, severity: ExceptionSeverity.Error);
 
 ### Environment Variables
 
-The `UNO_PLATFORM_TELEMETRY_OPTOUT` environment variable works on WASM just like other platforms:
+The `UNO_PLATFORM_TELEMETRY_OPTOUT` environment variable works on WASM just like other platforms, and accepts the same values:
 
 ```csharp
 // Set before app initialization to disable telemetry

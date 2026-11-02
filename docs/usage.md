@@ -131,12 +131,16 @@ If attribution must be turned off without a code change:
   attached debugger.
 - Rolling back: the desktop channel persists unsent items under
   `Path.GetTempPath()/.uno/telemetry/outbox` and retransmits them on a later run, with the tags they
-  were stamped with. Older versions of the package use `Path.GetTempPath()/.uno/telemetry` instead
-  and never read `outbox`: items they queued stay there until an older version sends them, and items
-  left in `outbox` after a downgrade are sent by any process on the machine still on a newer version.
-  Downgrading the package does not stop already-stamped items from being sent; delete the pending
-  files in both directories before restarting if they must not leave the machine.
-  On Linux, and on macOS without `TMPDIR`, both directories are under the shared `/tmp`, so while a
+  were stamped with. On Linux, where the temp folder is usually the shared `/tmp`, it uses
+  `$XDG_CACHE_HOME/uno/telemetry/outbox` instead (`~/.cache/uno/telemetry/outbox` when
+  `XDG_CACHE_HOME` is unset), created so that only that user can open it (on .NET 8 and later; the
+  netstandard2.0 build creates it with default permissions), and queues nothing for a user with no
+  home folder. Earlier versions of the package queue under `Path.GetTempPath()/.uno/telemetry/outbox`
+  on Linux too, and versions before those under `Path.GetTempPath()/.uno/telemetry`. No version moves
+  items between these directories: items stay where they were queued until a version that reads that
+  directory sends them. Downgrading the package does not stop already-stamped items from being sent;
+  delete the pending files in each of these directories before restarting if they must not leave the
+  machine. Under the shared `/tmp` (earlier versions on Linux, and macOS without `TMPDIR`), while a
   user is signed in the pending files identify the account to other local users.
 
 ### File-based Telemetry

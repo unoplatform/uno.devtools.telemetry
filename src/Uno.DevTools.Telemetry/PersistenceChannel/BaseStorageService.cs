@@ -40,6 +40,12 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		internal uint MaxFiles { get; set; }
 
+		/// <summary>
+		///     Gets or sets the address the transmissions read back from storage are sent to. A queued file names an address
+		///     too, but whoever wrote the file chose it, so it is ignored.
+		/// </summary>
+		internal Uri EndpointAddress { get; set; } = new Uri(PersistenceChannel.TelemetryServiceEndpoint);
+
 		internal abstract string? StorageDirectoryPath { get; }
 
 		/// <summary>

@@ -41,17 +41,22 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		}
 
 		/// <summary>
-		///     Creates a new transmission from the specified <paramref name="stream" />.
+		///     Creates a new transmission from the specified <paramref name="stream" />, to be sent to
+		///     <paramref name="endpointAddress" />.
 		/// </summary>
+		/// <remarks>
+		///     The stream names an address too. It is still read, so that the format stays the one every version shares,
+		///     but not used: whoever could write the file could have chosen it.
+		/// </remarks>
 		/// <returns>Return transmission loaded from file; return null if the file is corrupted.</returns>
-		internal static async Task<StorageTransmission> CreateFromStreamAsync(Stream stream, string fileName)
+		internal static async Task<StorageTransmission> CreateFromStreamAsync(Stream stream, string fileName, Uri endpointAddress)
 		{
 			using var reader = new StreamReader(stream);
-			var address = await ReadAddressAsync(reader).ConfigureAwait(false);
+			_ = await ReadAddressAsync(reader).ConfigureAwait(false);
 			var contentType = await ReadHeaderAsync(reader, "Content-Type").ConfigureAwait(false);
 			var contentEncoding = await ReadHeaderAsync(reader, "Content-Encoding").ConfigureAwait(false);
 			var content = await ReadContentAsync(reader).ConfigureAwait(false);
-			return new StorageTransmission(fileName, address, content, contentType, contentEncoding);
+			return new StorageTransmission(fileName, endpointAddress, content, contentType, contentEncoding);
 		}
 
 		/// <summary>

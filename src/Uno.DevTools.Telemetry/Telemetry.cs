@@ -9,6 +9,7 @@
 
 using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.Extensibility;
+using Microsoft.ApplicationInsights.Extensibility.Implementation;
 using Microsoft.DotNet.PlatformAbstractions;
 using System.Diagnostics;
 using System.Reflection;
@@ -19,6 +20,9 @@ namespace Uno.DevTools.Telemetry
     public sealed class Telemetry : ITelemetry
     {
         private static readonly bool IsWasmBrowser = PlatformDetection.IsWasmBrowser;
+
+        // Stands in for the computer's name, which the SDK would otherwise put in every desktop item.
+        internal const string AnonymousRoleInstance = "anonymous";
 
         private readonly string? _currentSessionId;
         private TelemetryClient? _client;
@@ -303,6 +307,10 @@ namespace Uno.DevTools.Telemetry
                 _client.Context.User.Id = _commonProperties[TelemetryCommonProperties.MachineId];
                 _client.Context.Session.Id = _currentSessionId;
                 _client.Context.Device.OperatingSystem = Microsoft.DotNet.PlatformAbstractions.RuntimeEnvironment.OperatingSystem;
+                // The SDK fills an empty role instance with the machine's name (with its domain, if any), and
+                // an empty node name too once the role instance is set. Both are copied onto every item.
+                _client.Context.Cloud.RoleInstance = AnonymousRoleInstance;
+                _client.Context.GetInternalContext().NodeName = AnonymousRoleInstance;
 
                 _machineIdTcs.TrySetResult(_client.Context.User.Id);
             }

@@ -32,9 +32,13 @@ namespace Uno.DevTools.Telemetry.Tests
                 {
                     Directory.Delete(dir, true);
                 }
-                catch
+                catch (IOException)
                 {
-                    // Best effort cleanup
+                    // Best effort cleanup: something still holds the folder
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Best effort cleanup: a test left a folder without write permission
                 }
             }
 
@@ -450,7 +454,7 @@ namespace Uno.DevTools.Telemetry.Tests
             }
             else
             {
-                failure.Should().Contain("root");
+                failure.Should().NotBeNull().And.Contain("root");
                 Directory.EnumerateFileSystemEntries(home).Should().BeEmpty();
             }
         }

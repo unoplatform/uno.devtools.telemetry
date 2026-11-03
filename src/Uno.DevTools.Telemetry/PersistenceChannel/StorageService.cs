@@ -26,8 +26,6 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 {
 	internal sealed class StorageService : BaseStorageService
 	{
-		private const string DefaultStorageFolderName = "TelemetryStorageService";
-		
 		/// <summary>
 		///     TTL for .trn files: 30 days. After this period, files are deleted even if not sent.
 		/// </summary>
@@ -59,7 +57,6 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// </summary>
 		private readonly Dictionary<string, FileStream> _claims = new Dictionary<string, FileStream>();
 
-		private readonly Func<string, bool> _isOwnedByCurrentUser;
 		private readonly object _peekLockObj = new object();
 		private readonly object _storageFolderLock = new object();
 		private string? _storageDirectoryPath;
@@ -69,23 +66,19 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		private long _storageSize;
 		private uint _transmissionsDropped;
 
-		/// <param name="isOwnedByCurrentUser">
-		///     Whether a queued file, by full path, belongs to the current user. <see cref="FileOwner.IsCurrentUser" /> unless a
-		///     test replaces it.
-		/// </param>
-		internal StorageService(Func<string, bool>? isOwnedByCurrentUser = null)
-		{
-			_isOwnedByCurrentUser = isOwnedByCurrentUser ?? FileOwner.IsCurrentUser;
-		}
-
 		/// <summary>
 		///     Gets the storage's folder name.
 		/// </summary>
 		internal override string? StorageDirectoryPath => _storageDirectoryPath;
 
 		/// <summary>
-		///     Gets the storage folder. If storage folder couldn't be created, null will be returned.
+		///     Gets the storage folder, or null when there is none.
 		/// </summary>
+		/// <remarks>
+		///     The folder is never created here: the caller creates it and makes it private (see <c>QueueDirectory</c>), and
+		///     one created here would be open to other users. If it is missing, as when it was deleted after it was
+		///     prepared, nothing is stored.
+		/// </remarks>
 		private string? StorageFolder
 		{
 			get
@@ -96,19 +89,10 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					{
 						if (!_storageFolderInitialized && _storageDirectoryPath is not null)
 						{
-							try
+							_storageDirectoryPathUsed = Directory.Exists(_storageDirectoryPath) ? _storageDirectoryPath : null;
+							if (_storageDirectoryPathUsed is null)
 							{
-								_storageDirectoryPathUsed = _storageDirectoryPath;
-
-								if (!Directory.Exists(_storageDirectoryPathUsed))
-								{
-									CreatePrivateDirectory(_storageDirectoryPathUsed);
-								}
-							}
-							catch (Exception e)
-							{
-								_storageDirectoryPathUsed = null;
-								PersistenceChannelDebugLog.WriteException(e, "Failed to create storage folder");
+								PersistenceChannelDebugLog.WriteLine("The storage folder does not exist; nothing is stored.");
 							}
 
 							_storageFolderInitialized = true;
@@ -120,27 +104,11 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			}
 		}
 
-		/// <summary>
-		///     Creates a folder, and its missing parents, so that only the current user can open them (mode 0700) on Unix.
-		///     netstandard2.0 can't set a mode, so there, as on Windows, they get the platform's default permissions.
-		/// </summary>
-		private static void CreatePrivateDirectory(string path)
-		{
-#if NET7_0_OR_GREATER
-			if (!OperatingSystem.IsWindows())
-			{
-				Directory.CreateDirectory(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-				return;
-			}
-#endif
-			Directory.CreateDirectory(path);
-		}
-
 		internal override void Init(string? storageDirectoryPath)
 		{
 			PeekedTransmissions = new SnapshottingDictionary<string, string>();
 
-			VerifyOrSetDefaultStorageDirectoryPath(storageDirectoryPath);
+			VerifyStorageDirectoryPath(storageDirectoryPath);
 
 			CapacityInBytes = 10 * 1024 * 1024; // 10 MB
 			MaxFiles = 100;
@@ -156,23 +124,23 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					TaskContinuationOptions.OnlyOnFaulted);
 		}
 
-		private void VerifyOrSetDefaultStorageDirectoryPath(string? desireStorageDirectoryPath)
+		/// <summary>
+		///     Sets the storage folder. Without one nothing is stored: a folder chosen here could be one that other users share.
+		/// </summary>
+		private void VerifyStorageDirectoryPath(string? desireStorageDirectoryPath)
 		{
 			if (string.IsNullOrEmpty(desireStorageDirectoryPath))
 			{
-				_storageDirectoryPath = Path.Combine(
-					Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-					DefaultStorageFolderName);
+				_storageDirectoryPath = null;
+				return;
 			}
-			else
-			{
-				if (!Path.IsPathRooted(desireStorageDirectoryPath))
-				{
-					throw new ArgumentException($"{nameof(desireStorageDirectoryPath)} need to be rooted (full path)");
-				}
 
-				_storageDirectoryPath = desireStorageDirectoryPath;
+			if (!Path.IsPathRooted(desireStorageDirectoryPath))
+			{
+				throw new ArgumentException($"{nameof(desireStorageDirectoryPath)} need to be rooted (full path)");
 			}
+
+			_storageDirectoryPath = desireStorageDirectoryPath;
 		}
 
 		/// <summary>
@@ -235,7 +203,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		/// <summary>
 		///     Opens a queued file exclusively, and keeps it open until its transmission is disposed: meanwhile no other
 		///     sender can open it, so only one sends it. A file this process can't open for writing (e.g. one owned by
-		///     another user) is not ours to send, nor is one another user owns even if we can.
+		///     another user) is not ours to send.
 		/// </summary>
 		private bool TryClaim(string file)
 		{
@@ -249,11 +217,6 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 			FileStream? claim = null;
 			try
 			{
-				if (!_isOwnedByCurrentUser(path))
-				{
-					return false;
-				}
-
 				claim = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, ClaimShare);
 
 				// Outside Windows the lock is taken just after the file is opened: its previous holder may have sent and

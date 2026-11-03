@@ -166,10 +166,11 @@ after the value was set.
   the properties dictionary of a single event), not in-process spoofing. Server-side consumers MUST
   NOT treat `user_AuthenticatedId` as verified identity for authorization, abuse, or billing
   decisions.
-- **Deferred transmission**: the desktop offline channel persists unsent items under
-  `Path.GetTempPath()/.uno/telemetry/outbox` (on Linux, `$XDG_CACHE_HOME/uno/telemetry/outbox` or
-  `~/.cache/uno/telemetry/outbox`; see docs/usage.md for the folders of older versions of the package)
-  and retransmits them in a later run. Tags are serialized into
+- **Deferred transmission**: the desktop offline channel persists unsent items in a queue folder of
+  the user's own (`Path.GetTempPath()/.uno/telemetry/outbox` on Windows and on macOS with `TMPDIR`,
+  the user's cache folder elsewhere; see docs/usage.md for the folders, how they are checked, and
+  those of older versions of the package) and retransmits them in a later run. Where no folder can
+  be made the user's alone, nothing is queued or sent. Tags are serialized into
   the persisted item, so a retransmitted item carries the identity that was valid when it was
   tracked, even if that user has since signed out or another user has signed in, and downgrading
   the package does not stop them. Consumers with data-deletion obligations for that at-rest window

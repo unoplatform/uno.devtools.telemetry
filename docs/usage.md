@@ -129,19 +129,45 @@ If attribution must be turned off without a code change:
   the value is first assigned, for example
   `Trace.Listeners.Add(new TextWriterTraceListener(path))`; the default listener only reaches an
   attached debugger.
-- Rolling back: the desktop channel persists unsent items under
-  `Path.GetTempPath()/.uno/telemetry/outbox` and retransmits them on a later run, with the tags they
-  were stamped with. On Linux, where the temp folder is usually the shared `/tmp`, it uses
-  `$XDG_CACHE_HOME/uno/telemetry/outbox` instead (`~/.cache/uno/telemetry/outbox` when
-  `XDG_CACHE_HOME` is unset), created so that only that user can open it (on .NET 8 and later; the
-  netstandard2.0 build creates it with default permissions), and queues nothing for a user with no
-  home folder. Earlier versions of the package queue under `Path.GetTempPath()/.uno/telemetry/outbox`
-  on Linux too, and versions before those under `Path.GetTempPath()/.uno/telemetry`. No version moves
-  items between these directories: items stay where they were queued until a version that reads that
-  directory sends them. Downgrading the package does not stop already-stamped items from being sent;
-  delete the pending files in each of these directories before restarting if they must not leave the
-  machine. Under the shared `/tmp` (earlier versions on Linux, and macOS without `TMPDIR`), while a
-  user is signed in the pending files identify the account to other local users.
+- Rolling back: the desktop channel persists unsent items in a queue folder and retransmits them on
+  a later run, with the tags they were stamped with. Where the temp folder belongs to the user alone
+  (on Windows, and on macOS when `TMPDIR` is set, as it is in a login session), that is
+  `Path.GetTempPath()/.uno/telemetry/outbox`. Elsewhere the temp folder is usually the shared `/tmp`,
+  so the queue goes in the user's cache folder instead: `~/Library/Caches/uno/telemetry/outbox` on
+  macOS without `TMPDIR` (under sudo, cron or a launchd daemon), and
+  `$XDG_CACHE_HOME/uno/telemetry/outbox` on Linux, FreeBSD and other Unix systems, or
+  `~/.cache/uno/telemetry/outbox` when `XDG_CACHE_HOME` is unset or relative.
+- Outside Windows the queue folder is checked once, when telemetry starts, in every build of the
+  package, netstandard2.0 included. The folder that holds the ones the package names must not be
+  writable by users outside its owner and group, unless it has the sticky bit as `/tmp` does, since
+  they could otherwise rename the queue folder away and put their own in its place. Its group may
+  write to it: where each user has a group of their own, as on Ubuntu, Debian and Fedora, `~/.cache`
+  is usually mode 0775. On a machine where several users share the group of someone's cache folder,
+  those users could replace that person's queue folder. The folders the package names (`uno`
+  or `.uno`, `telemetry` and `outbox`) must not be symbolic links, are created with mode 0700 when
+  missing, and are then set to mode 0700 and read back. Only a folder's owner, or root, may change
+  its mode, so this also shows the folder is the user's. A queue folder deleted while telemetry runs
+  is not created again: nothing more is queued until the next start.
+- When there is no such folder, the instance queues nothing and sends nothing, and writes one
+  `Trace` line naming the reason. That happens when the user has no home folder, or a home of `/`;
+  when users outside its group can write to the folder that holds the queue folder, and it has no
+  sticky bit; when a folder can't be
+  created, is a symbolic link, belongs to another user (the system refuses to change its mode), or
+  is on a file system that keeps no Unix permissions; when the runtime can't set a folder's mode
+  (the netstandard2.0 build in a runtime older than .NET 7); and when the process runs as root
+  through sudo or doas (`SUDO_UID`, `SUDO_USER` or `DOAS_USER` is set) with a home that isn't root's,
+  as under `sudo -E`, where it creates nothing. Root without those, as in a container, queues in its
+  home like any user. Without a usable home the machine id isn't stored either.
+- Earlier versions of the package queue under `Path.GetTempPath()/.uno/telemetry/outbox` on every
+  platform, and versions before those under `Path.GetTempPath()/.uno/telemetry`: on Linux, and on
+  macOS when `TMPDIR` is unset, that is the shared `/tmp`, where while a user is signed in their
+  pending files identify the account to other local users. No version moves items between these
+  directories: items stay where they were queued until a version that reads that directory sends
+  them. Tools on the same machine that still carry an older version, such as a generator pinned by
+  an older SDK, keep queueing in the temp folder until they are updated, and keep sending a queued
+  item to the address stored in it. Downgrading the package does not stop already-stamped items
+  from being sent; delete the pending files in each of these directories before restarting if they
+  must not leave the machine.
 
 ### File-based Telemetry
 By default, telemetry is persisted locally before being sent. You can configure the storage location and behavior by customizing the `Telemetry` constructor.

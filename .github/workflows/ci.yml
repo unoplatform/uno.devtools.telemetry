@@ -76,6 +76,69 @@ jobs:
         path: artifacts/test-results/*.trx
         reporter: dotnet-trx
 
+  # Unit tests on Linux, where the queue folder is chosen and made private differently from Windows. Two jobs, because
+  # some checks need an ordinary user and others root: this one runs as the runner's ordinary user on glibc, and the next
+  # one as root on musl. Neither needs the WASM workload, so neither runs uno-check.
+  #
+  # A test that can't run where it is comes out skipped, which counts as passing. UNO_TELEMETRY_TESTS_REQUIRE names what
+  # each job is for, and makes the tests it exists to run fail instead of skipping; a test also checks that the job runs
+  # as that user on Linux (see src/Uno.DevTools.Telemetry.Tests/TestRequirements.cs).
+  linux-unit-tests:
+    name: Unit Tests (Linux, glibc)
+    runs-on: ubuntu-latest
+    env:
+      UNO_TELEMETRY_TESTS_REQUIRE: linux-user
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # The test project targets net8.0; the library also targets net9.0, which the 10.0 SDK builds.
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          8.0.x
+          10.0.x
+
+    - name: Test
+      run: |
+        cd src/Uno.DevTools.Telemetry.Tests
+        dotnet restore
+        dotnet test --configuration Release --no-restore
+
+  linux-musl-unit-tests:
+    name: Unit Tests (Linux, musl)
+    runs-on: ubuntu-latest
+    # Runs as root, the image's default user, with HOME set by the runner to a folder root doesn't own. The tests fail
+    # the job if it doesn't run as root.
+    container: mcr.microsoft.com/dotnet/sdk:10.0-alpine
+    env:
+      UNO_TELEMETRY_TESTS_REQUIRE: linux-root
+
+    steps:
+    # setup-dotnet's install script needs bash and curl, and checkout uses git when it is there.
+    - name: Install setup prerequisites
+      run: apk add --no-cache bash curl git
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # As in the glibc job. The image's own 10.0 SDK isn't relied on: setup-dotnet may install elsewhere and put that
+    # first on the PATH.
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          8.0.x
+          10.0.x
+
+    - name: Test
+      run: |
+        cd src/Uno.DevTools.Telemetry.Tests
+        dotnet restore
+        dotnet test --configuration Release --no-restore
+
   # WebAssembly Runtime Tests
   # Tests telemetry functionality in actual browser environment using Uno.UI.RuntimeTests.Engine
   # Follows official guide: https://github.com/unoplatform/uno.ui.runtimetests.engine

@@ -43,6 +43,7 @@ namespace Uno.DevTools.Telemetry
         private readonly Func<string>? _currentDirectoryProvider;
         private readonly Microsoft.ApplicationInsights.Channel.ITelemetryChannel? _channelOverride;
         private readonly WasmHttpSender? _wasmSenderOverride;
+        private readonly UserFolders? _foldersOverride;
         private readonly TaskCompletionSource<string?> _machineIdTcs = new TaskCompletionSource<string?>();
 
         public bool Enabled { get; }
@@ -73,7 +74,8 @@ namespace Uno.DevTools.Telemetry
 
         // Test seams: an injected channel replaces the persistence channel so the suite can observe the
         // items the desktop pipeline emits in-process, without disk or network I/O; an injected sender
-        // takes the WASM send path on any platform so the arguments forwarded to it can be asserted.
+        // takes the WASM send path on any platform so the arguments forwarded to it can be asserted;
+        // injected folders describe another machine to choose the queue and settings folders on.
         internal Telemetry(
             string instrumentationKey,
             string eventNamePrefix,
@@ -84,7 +86,8 @@ namespace Uno.DevTools.Telemetry
             Func<string>? currentDirectoryProvider,
             string? productName,
             Microsoft.ApplicationInsights.Channel.ITelemetryChannel? channel,
-            WasmHttpSender? wasmSender)
+            WasmHttpSender? wasmSender,
+            UserFolders? folders = null)
         {
             _instrumentationKey = instrumentationKey;
             _currentDirectoryProvider = currentDirectoryProvider;
@@ -93,6 +96,7 @@ namespace Uno.DevTools.Telemetry
             _productName = productName;
             _channelOverride = channel;
             _wasmSenderOverride = wasmSender;
+            _foldersOverride = folders;
 
             // An opt-out value, or the literal false, in the environment wins over the provider; anything
             // else falls through to it.
@@ -248,31 +252,25 @@ namespace Uno.DevTools.Telemetry
                     return;
                 }
 
-                // Non-WASM path: Existing implementation unchanged
-                var isLinux = Microsoft.DotNet.PlatformAbstractions.RuntimeEnvironment.OperatingSystemPlatform == Platform.Linux;
-                _storageDirectoryPath = QueueDirectory.GetPath(
-                    isLinux,
-                    Environment.GetEnvironmentVariable("XDG_CACHE_HOME"),
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    Path.GetTempPath());
+                // Non-WASM path
+                var folders = _foldersOverride ?? UserFolders.Current();
 
-                if (_storageDirectoryPath is null && _channelOverride is null)
+                // An injected channel needs no queue folder, and none is created for it.
+                if (_channelOverride is null)
                 {
-                    // No folder of the user's own to queue in (see QueueDirectory), so nothing could be sent.
-                    TelemetryDiagnostics.Write("Telemetry is disabled for this instance: the user has no home folder to queue it in.");
-                    _machineIdTcs.TrySetResult(null);
-                    return;
+                    _storageDirectoryPath = QueueDirectory.Choose(folders, out var failure);
+                    if (_storageDirectoryPath is null)
+                    {
+                        // No folder of the user's own to queue in (see QueueDirectory), so nothing is queued and nothing
+                        // is sent: the instance stays as if its initialization had failed.
+                        TelemetryDiagnostics.Write($"Telemetry is disabled for this instance: {failure}.");
+                        _wasmSender = null;
+                        _machineIdTcs.TrySetResult(null);
+                        return;
+                    }
                 }
 
-                // Store the settings on in the user profile for linux
-                if (isLinux)
-                {
-                    _settingsStorageDirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".uno", "telemetry");
-                }
-                else
-                {
-                    _settingsStorageDirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Uno Platform", "telemetry");
-                }
+                _settingsStorageDirectoryPath = GetSettingsDirectoryPath(folders);
 
                 Microsoft.ApplicationInsights.Channel.ITelemetryChannel channel;
                 if (_channelOverride is not null)
@@ -326,6 +324,31 @@ namespace Uno.DevTools.Telemetry
                 // exception (type and stack) goes out, since this is the only signal a Release consumer gets.
                 TelemetryDiagnostics.Write($"Telemetry initialization failed; telemetry is disabled for this instance: {e}");
             }
+        }
+
+        /// <summary>
+        /// Returns the folder the machine id is kept in, or <see langword="null"/> when there is no usable home to keep it
+        /// in: it is then not kept, rather than written under the current directory or at the root of the file system.
+        /// </summary>
+        /// <remarks>
+        /// Linux keeps it in the home folder, everything else in the application data folder (on macOS, under the home
+        /// folder too). Neither follows the queue folder, so that a machine keeps the id it already has.
+        /// </remarks>
+        internal static string? GetSettingsDirectoryPath(UserFolders folders)
+        {
+            if (!folders.IsWindows && !UserFolders.IsUsableBase(folders.HomeDirectory))
+            {
+                return null;
+            }
+
+            if (folders.IsLinux)
+            {
+                return UserFolders.Join(folders.HomeDirectory!, ".uno", "telemetry");
+            }
+
+            return UserFolders.IsUsableBase(folders.ApplicationData)
+                ? UserFolders.Join(folders.ApplicationData, "Uno Platform", "telemetry")
+                : null;
         }
 
         private void TrackEventTask(

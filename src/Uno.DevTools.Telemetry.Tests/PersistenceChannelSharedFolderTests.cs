@@ -183,23 +183,19 @@ namespace Uno.DevTools.Telemetry.Tests
 		}
 
 		[TestMethod]
-		public void Given_NoStorageFolder_When_Used_Then_OnlyTheCurrentUserCanOpenIt()
+		[DataRow(null)]
+		[DataRow("")]
+		public void Given_NoStoragePath_When_Enqueued_Then_NothingIsStored(string? storageDir)
 		{
-			if (OperatingSystem.IsWindows())
-			{
-				Assert.Inconclusive("Unix file modes only.");
-				return;
-			}
-
-			// Arrange
-			var storageDir = Path.Join(GetTempStorageDirectory(), "telemetry", "outbox");
+			// Arrange - there used to be a default folder, which could be one that other users share
 			var storage = CreateStorage(storageDir);
 
 			// Act
 			storage.EnqueueAsync(CreateTransmission()).GetAwaiter().GetResult();
 
 			// Assert
-			File.GetUnixFileMode(storageDir).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+			storage.StorageDirectoryPath.Should().BeNull();
+			storage.Peek().Should().BeNull();
 		}
 
 		[TestMethod]
@@ -219,53 +215,6 @@ namespace Uno.DevTools.Telemetry.Tests
 			peeked!.EndpointAddress.Should().Be(new Uri("https://configured.example/v2/track"));
 		}
 
-		[TestMethod]
-		public void Given_FileAnotherUserOwns_When_Peek_Then_ItIsSkippedAndLeftInPlace()
-		{
-			// Arrange - this process could open the other user's file, but it isn't theirs to send
-			var storageDir = GetTempStorageDirectory();
-			var othersFile = WriteQueuedFile(storageDir, "https://dc.services.visualstudio.com/v2/track");
-			var storage = CreateStorage(storageDir, isOwnedByCurrentUser: path => path != othersFile);
-			storage.EnqueueAsync(CreateTransmission()).GetAwaiter().GetResult();
-
-			// Act
-			using var peeked = storage.Peek();
-			using var peekedAgain = storage.Peek();
-
-			// Assert
-			peeked.Should().NotBeNull("the current user's own file is still sent");
-			peeked!.FileName.Should().NotBe(Path.GetFileName(othersFile));
-			peekedAgain.Should().BeNull("the other user's file must not be sent");
-			File.Exists(othersFile).Should().BeTrue("it is left for its owner");
-			Directory.GetFiles(storageDir, "*.corrupt").Should().BeEmpty();
-		}
-
-		[TestMethod]
-		public void Given_FileThisProcessCreated_When_OwnerIsChecked_Then_ItIsTheCurrentUsers()
-		{
-			var path = WriteQueuedFile(GetTempStorageDirectory(), "https://dc.services.visualstudio.com/v2/track");
-
-			FileOwner.IsCurrentUser(path).Should().BeTrue();
-		}
-
-		[TestMethod]
-		public void Given_FileRootOwns_When_OwnerIsCheckedOnLinux_Then_ItIsNotTheCurrentUsers()
-		{
-			if (!OperatingSystem.IsLinux())
-			{
-				Assert.Inconclusive("Only Linux reports a file's owner.");
-				return;
-			}
-
-			if (Environment.UserName == "root")
-			{
-				Assert.Inconclusive("The file checked belongs to root, which this process runs as.");
-				return;
-			}
-
-			FileOwner.IsCurrentUser("/").Should().BeFalse();
-		}
-
 		private static PersistenceChannel.PersistenceChannel CreateChannel(string storageDir, string endpointAddress)
 			=> new PersistenceChannel.PersistenceChannel(storageDir)
 			{
@@ -273,9 +222,9 @@ namespace Uno.DevTools.Telemetry.Tests
 				SendingInterval = TimeSpan.FromMilliseconds(1),
 			};
 
-		private static StorageService CreateStorage(string storageDir, Func<string, bool>? isOwnedByCurrentUser = null)
+		private static StorageService CreateStorage(string? storageDir)
 		{
-			var storage = new StorageService(isOwnedByCurrentUser);
+			var storage = new StorageService();
 			storage.Init(storageDir);
 			return storage;
 		}
@@ -349,7 +298,7 @@ namespace Uno.DevTools.Telemetry.Tests
 			}
 
 			restore.Dispose();
-			Assert.Inconclusive("File permissions are not enforced for this user (root?).");
+			TestRequirements.Skip("File permissions are not enforced for this user (root?).", TestRequirements.LinuxUser);
 			return restore;
 		}
 

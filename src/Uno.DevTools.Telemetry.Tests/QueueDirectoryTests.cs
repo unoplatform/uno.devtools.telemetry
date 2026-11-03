@@ -575,7 +575,7 @@ namespace Uno.DevTools.Telemetry.Tests
             }
             else
             {
-                failure.Should().NotBeNull().And.Contain("root");
+                (failure ?? string.Empty).Should().Contain("root");
                 Directory.EnumerateFileSystemEntries(home).Should().BeEmpty();
             }
         }

@@ -96,7 +96,7 @@ namespace Uno.DevTools.Telemetry.Tests
                 "system refuses the mode" => QueueDirectoryTests.Unix(home, modes: FakeModes.Accepting(setMode: (_, _) => throw new UnauthorizedAccessException())),
                 "file system keeps no modes" => QueueDirectoryTests.Unix(home, modes: FakeModes.Accepting(getMode: _ => 0x1ED, setMode: (_, _) => { })),
                 "others can write to the base folder" => QueueDirectoryTests.Unix(home, modes: FakeModes.Accepting(getMode: folder => Path.GetFileName(folder) == ".cache" ? 0x1FF : UnixFolder.OwnerOnlyMode)),
-                "root through sudo with the user's home" => QueueDirectoryTests.Unix(home, isRoot: () => true, isElevatedFromAnotherUser: true, isHomeOfRoot: _ => false, modes: FakeModes.Accepting()),
+                "root through sudo with the user's home" => QueueDirectoryTests.Unix(home, isRoot: () => true, isElevatedFromAnotherUser: true, isInHomeOfRoot: _ => false, modes: FakeModes.Accepting()),
                 _ => throw new ArgumentOutOfRangeException(nameof(situation)),
             };
 

@@ -138,26 +138,36 @@ If attribution must be turned off without a code change:
   `$XDG_CACHE_HOME/uno/telemetry/outbox` on Linux, FreeBSD and other Unix systems, or
   `~/.cache/uno/telemetry/outbox` when `XDG_CACHE_HOME` is unset or relative.
 - Outside Windows the queue folder is checked once, when telemetry starts, in every build of the
-  package, netstandard2.0 included. The folder that holds the ones the package names must not be
-  writable by users outside its owner and group, unless it has the sticky bit as `/tmp` does, since
-  they could otherwise rename the queue folder away and put their own in its place. Its group may
+  package, netstandard2.0 included. Whoever can rename entries in the folder that holds the ones the
+  package names could rename the queue folder away and put their own in its place. So that folder
+  must not be writable by users outside its owner and group, even with the sticky bit, since `/tmp`'s
+  sticky bit doesn't stop the folder's owner; and it must be the user's own, which the package shows
+  by setting its mode to the one it already has (only a folder's owner, or root, may). Its group may
   write to it: where each user has a group of their own, as on Ubuntu, Debian and Fedora, `~/.cache`
   is usually mode 0775. On a machine where several users share the group of someone's cache folder,
   those users could replace that person's queue folder. The folders the package names (`uno`
   or `.uno`, `telemetry` and `outbox`) must not be symbolic links, are created with mode 0700 when
-  missing, and are then set to mode 0700 and read back. Only a folder's owner, or root, may change
-  its mode, so this also shows the folder is the user's. A queue folder deleted while telemetry runs
-  is not created again: nothing more is queued until the next start.
+  missing, then set to mode 0700 and read back, and are checked for links again at the end. Only a
+  folder's owner, or root, may change its mode, so this also shows the folder is the user's; for root
+  it shows nothing. Mode bits are all that is checked: an access control list that survives the
+  change, as macOS, ZFS and NFSv4 allow, or a mount that reports 0700 without enforcing it, is not
+  detected. A queue folder deleted while telemetry runs is not created again: nothing more is queued
+  until the next start.
+- A queued file is read only if it is a regular file no longer than the whole queue may hold
+  (10 MB); a link to a device or a pipe, or a longer file, is set aside as corrupt.
 - When there is no such folder, the instance queues nothing and sends nothing, and writes one
-  `Trace` line naming the reason. That happens when the user has no home folder, or a home of `/`;
-  when users outside its group can write to the folder that holds the queue folder, and it has no
-  sticky bit; when a folder can't be
+  `Trace` line naming the reason; with `UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT` set,
+  the reason is also written to the console. That happens when the user has no home folder, or a
+  home of `/`; when users outside its group can write to the folder that holds the queue folder, or
+  that folder isn't the user's; when a folder can't be
   created, is a symbolic link, belongs to another user (the system refuses to change its mode), or
   is on a file system that keeps no Unix permissions; when the runtime can't set a folder's mode
   (the netstandard2.0 build in a runtime older than .NET 7); and when the process runs as root
-  through sudo or doas (`SUDO_UID`, `SUDO_USER` or `DOAS_USER` is set) with a home that isn't root's,
-  as under `sudo -E`, where it creates nothing. Root without those, as in a container, queues in its
-  home like any user. Without a usable home the machine id isn't stored either.
+  through sudo or doas for another user (`SUDO_UID`, `SUDO_USER` or `DOAS_USER` names a user other
+  than root) and the queue folder would be outside root's home, as under `sudo -E`, or when sudo
+  keeps `XDG_CACHE_HOME`; it then creates nothing. Root without those, as in a container, queues in
+  its home like any user; so does root reached through `su -m` or `su -p`, which set none of them.
+  Without a usable home the machine id isn't stored either.
 - Earlier versions of the package queue under `Path.GetTempPath()/.uno/telemetry/outbox` on every
   platform, and versions before those under `Path.GetTempPath()/.uno/telemetry`: on Linux, and on
   macOS when `TMPDIR` is unset, that is the shared `/tmp`, where while a user is signed in their

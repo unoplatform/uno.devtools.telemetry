@@ -215,6 +215,48 @@ namespace Uno.DevTools.Telemetry.Tests
 			peeked!.EndpointAddress.Should().Be(new Uri("https://configured.example/v2/track"));
 		}
 
+		[TestMethod]
+		public void Given_QueuedFileThatIsALinkToADevice_When_Peek_Then_ItIsQuarantinedWithoutBeingRead()
+		{
+			// Opening a file follows a link, and /dev/zero never ends: reading it to the end would exhaust memory
+			if (OperatingSystem.IsWindows())
+			{
+				TestRequirements.Skip("Unix devices only.", TestRequirements.LinuxUser, TestRequirements.LinuxRoot);
+				return;
+			}
+
+			// Arrange - a link planted before the folder was made private
+			var storageDir = GetTempStorageDirectory();
+			var storage = CreateStorage(storageDir);
+			File.CreateSymbolicLink(Path.Join(storageDir, QueuedFileName()), "/dev/zero");
+
+			// Act
+			var peeked = storage.Peek();
+
+			// Assert
+			peeked.Should().BeNull("a device is not a transmission");
+			Directory.GetFiles(storageDir, "*.trn").Should().BeEmpty();
+			Directory.GetFiles(storageDir, "*.corrupt").Should().ContainSingle("it is quarantined as corrupt");
+		}
+
+		[TestMethod]
+		public void Given_QueuedFileLongerThanTheStorageMayHold_When_Peek_Then_ItIsQuarantinedWithoutBeingRead()
+		{
+			// Arrange - no file this storage writes is longer than its whole capacity
+			var storageDir = GetTempStorageDirectory();
+			var storage = CreateStorage(storageDir);
+			var path = WriteQueuedFile(storageDir, "https://dc.services.visualstudio.com/v2/track");
+			storage.CapacityInBytes = (ulong)new FileInfo(path).Length - 1;
+
+			// Act
+			var peeked = storage.Peek();
+
+			// Assert
+			peeked.Should().BeNull();
+			File.Exists(path).Should().BeFalse();
+			Directory.GetFiles(storageDir, "*.corrupt").Should().ContainSingle("it is quarantined as corrupt");
+		}
+
 		private static PersistenceChannel.PersistenceChannel CreateChannel(string storageDir, string endpointAddress)
 			=> new PersistenceChannel.PersistenceChannel(storageDir)
 			{
@@ -253,10 +295,16 @@ namespace Uno.DevTools.Telemetry.Tests
 					stream).GetAwaiter().GetResult();
 			}
 
-			var path = Path.Join(storageDir, DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) + "_" + name + ".trn");
+			var path = Path.Join(storageDir, QueuedFileName(name));
 			File.Move(tempPath, path);
 			return path;
 		}
+
+		/// <summary>
+		///     A name the storage gives a queued file.
+		/// </summary>
+		private static string QueuedFileName(string? name = null)
+			=> DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) + "_" + (name ?? Guid.NewGuid().ToString("N")) + ".trn";
 
 		/// <summary>
 		///     Until disposed, <paramref name="path" /> can't be opened for writing, as when it belongs to another user.

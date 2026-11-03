@@ -35,7 +35,7 @@ namespace Uno.DevTools.Telemetry
 
         /// <summary>
         /// Whether this process was started for another user through sudo or doas, which say so in <c>SUDO_UID</c>,
-        /// <c>SUDO_USER</c> or <c>DOAS_USER</c>.
+        /// <c>SUDO_USER</c> or <c>DOAS_USER</c>. See <see cref="IsStartedForAnotherUser"/>.
         /// </summary>
         internal bool IsElevatedFromAnotherUser { get; init; }
 
@@ -46,7 +46,10 @@ namespace Uno.DevTools.Telemetry
 
         internal Func<bool> IsRoot { get; init; } = UnixFolder.IsRoot;
 
-        internal Func<string?, bool> IsHomeOfRoot { get; init; } = UnixFolder.IsHomeOfRoot;
+        /// <summary>
+        /// Whether a folder is root's own home, or inside it.
+        /// </summary>
+        internal Func<string, bool> IsInHomeOfRoot { get; init; } = UnixFolder.IsInHomeOfRoot;
 
         internal static UserFolders Current() => new UserFolders
         {
@@ -58,9 +61,19 @@ namespace Uno.DevTools.Telemetry
             HomeDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             TempPath = Path.GetTempPath(),
             ApplicationData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            IsElevatedFromAnotherUser = new[] { "SUDO_UID", "SUDO_USER", "DOAS_USER" }
-                .Any(name => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(name))),
+            IsElevatedFromAnotherUser = IsStartedForAnotherUser(Environment.GetEnvironmentVariable),
         };
+
+        /// <summary>
+        /// Whether sudo or doas started this process for a user other than root, as the variables they set say:
+        /// <c>SUDO_UID</c> or <c>SUDO_USER</c>, and <c>DOAS_USER</c>. Root running sudo itself sets them to <c>0</c> and
+        /// <c>root</c>, and no other user is involved.
+        /// </summary>
+        /// <param name="getVariable">Reads an environment variable.</param>
+        internal static bool IsStartedForAnotherUser(Func<string, string?> getVariable)
+            => new[] { "SUDO_UID", "SUDO_USER", "DOAS_USER" }
+                .Select(getVariable)
+                .Any(value => !string.IsNullOrEmpty(value) && value != "0" && value != "root");
 
         /// <summary>
         /// Whether <paramref name="path"/> can hold a folder of the user's own: it is rooted, and isn't the root of the file

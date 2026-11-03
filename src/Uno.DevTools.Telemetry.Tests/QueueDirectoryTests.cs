@@ -370,11 +370,12 @@ namespace Uno.DevTools.Telemetry.Tests
         [TestMethod]
         public void Given_RootThroughSudoWithTheUsersHome_When_Prepared_Then_ThereIsNoUsableFolderAndNothingIsCreated()
         {
-            // Arrange - as under sudo -E, which keeps the user's HOME
+            // Arrange - as under sudo -E, which keeps the user's HOME. Fake modes, so the check is reached on Windows too,
+            // where the runtime has none.
             var home = CreateHome();
             var path = QueuePathUnder(home);
             var askedAbout = new List<string?>();
-            var folders = Unix(home, isRoot: () => true, isElevatedFromAnotherUser: true, isHomeOfRoot: h =>
+            var folders = Unix(home, isRoot: () => true, isElevatedFromAnotherUser: true, modes: FakeModes.Accepting(), isHomeOfRoot: h =>
             {
                 askedAbout.Add(h);
                 return false;

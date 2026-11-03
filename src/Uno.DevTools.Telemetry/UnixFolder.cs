@@ -23,14 +23,10 @@ namespace Uno.DevTools.Telemetry
         /// </summary>
         /// <remarks>
         /// The group's write bit, 0020, is left out on purpose. Where each user has a group of their own, as on Ubuntu,
-        /// Debian and Fedora, the usual umask 002 makes <c>~/.cache</c> 0775, and that group holds only its user.
+        /// Debian and Fedora, the usual umask 002 makes <c>~/.cache</c> 0775, and that group holds only its user. The sticky
+        /// bit, as on <c>/tmp</c>, doesn't make up for it: the folder's owner may still rename any entry in it.
         /// </remarks>
         internal const int WritableByOthers = 0x2;
-
-        /// <summary>
-        /// Mode bit 01000, the sticky bit: in a folder that has it, only an entry's owner may rename or delete it.
-        /// </summary>
-        internal const int Sticky = 0x200;
 
         private const string UserDatabasePath = "/etc/passwd";
 
@@ -95,24 +91,24 @@ namespace Uno.DevTools.Telemetry
         }
 
         /// <summary>
-        /// Whether <paramref name="home"/> is root's own home folder, as the user database lists it.
+        /// Whether <paramref name="path"/> is root's own home folder, or inside it, as the user database lists it.
         /// </summary>
         /// <remarks>
-        /// .NET can't tell who owns a folder, so root's own home stands in for "owned by root": a home other than the one
+        /// .NET can't tell who owns a folder, so root's own home stands in for "owned by root": a folder outside the home
         /// <c>/etc/passwd</c> lists for user id 0 (<c>/root</c>, or <c>/var/root</c> on macOS) counts as someone else's.
         /// Every Unix system lists root there, even where other users come from a directory service. A database that
         /// can't be read confirms nothing.
         /// </remarks>
-        internal static bool IsHomeOfRoot(string? home)
+        internal static bool IsInHomeOfRoot(string? path)
         {
-            if (string.IsNullOrEmpty(home))
+            if (string.IsNullOrEmpty(path))
             {
                 return false;
             }
 
             try
             {
-                return IsHomeOfRoot(home!, File.ReadAllLines(UserDatabasePath));
+                return IsInHomeOfRoot(path!, File.ReadAllLines(UserDatabasePath));
             }
             catch (IOException)
             {
@@ -129,15 +125,15 @@ namespace Uno.DevTools.Telemetry
         }
 
         /// <summary>
-        /// Whether <paramref name="home"/> is the home of a user id 0 entry in <paramref name="userDatabase"/>, the lines of
-        /// an <c>/etc/passwd</c> file.
+        /// Whether <paramref name="path"/> is the home of a user id 0 entry in <paramref name="userDatabase"/>, the lines of
+        /// an <c>/etc/passwd</c> file, or inside it.
         /// </summary>
-        internal static bool IsHomeOfRoot(string home, IEnumerable<string> userDatabase)
+        internal static bool IsInHomeOfRoot(string path, IEnumerable<string> userDatabase)
         {
             // name:password:uid:gid:comment:home:shell
             foreach (var fields in userDatabase.Select(line => line.Split(':')))
             {
-                if (fields.Length >= 6 && fields[2] == "0" && fields[5].Length > 0 && SamePath(fields[5], home))
+                if (fields.Length >= 6 && fields[2] == "0" && fields[5].TrimEnd('/').Length > 0 && IsSameOrInside(path, fields[5]))
                 {
                     return true;
                 }
@@ -145,6 +141,39 @@ namespace Uno.DevTools.Telemetry
 
             return false;
         }
+
+        /// <summary>
+        /// Sets the mode of <paramref name="path"/> to <paramref name="mode"/>, the mode it already has, to show that the
+        /// current user owns it: only a folder's owner, or root, may.
+        /// </summary>
+        /// <returns><see langword="null"/> when the system allowed it; otherwise why not. Never throws.</returns>
+        internal static string? TryConfirmOwner(FolderModes modes, string path, int mode)
+        {
+            try
+            {
+                modes.SetMode(path, mode);
+                return null;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return $"the system refused to set the permissions of {path}, which holds its queue folder, as it does for a folder that belongs to another user, who could replace the queue folder";
+            }
+            catch (IOException e)
+            {
+                return CantConfirm(path, e);
+            }
+            catch (NotSupportedException e)
+            {
+                return CantConfirm(path, e);
+            }
+            catch (ArgumentException e)
+            {
+                return CantConfirm(path, e);
+            }
+        }
+
+        private static string CantConfirm(string path, Exception e)
+            => $"it can't tell whether {path}, which holds its queue folder, is the user's ({e.GetType().Name}: {e.Message})";
 
         /// <summary>
         /// Sets the mode of the folder at <paramref name="path"/> to 0700, and reads it back.
@@ -226,8 +255,42 @@ namespace Uno.DevTools.Telemetry
 
         internal static string ToOctal(int mode) => "0" + Convert.ToString(mode & 0xFFF, 8);
 
-        private static bool SamePath(string left, string right)
-            => string.Equals(left.TrimEnd('/'), right.TrimEnd('/'), StringComparison.Ordinal);
+        /// <summary>
+        /// Whether <paramref name="path"/> is <paramref name="folder"/> or inside it. Like the file system on Linux, this is
+        /// case-sensitive; <c>..</c> is resolved first, so that it can't lead out of the folder.
+        /// </summary>
+        private static bool IsSameOrInside(string path, string folder)
+        {
+            var normalizedPath = Normalize(path);
+            var normalizedFolder = Normalize(folder);
+            return string.Equals(normalizedPath, normalizedFolder, StringComparison.Ordinal)
+                || normalizedPath.StartsWith(normalizedFolder + "/", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Resolves <c>.</c> and <c>..</c> in a rooted Unix path, and drops repeated and trailing separators, without
+        /// reading the disk. Unlike <see cref="Path.GetFullPath(string)"/>, it gives the same answer on every platform.
+        /// </summary>
+        private static string Normalize(string path)
+        {
+            var parts = new List<string>();
+            foreach (var part in path.Split('/'))
+            {
+                if (part == "..")
+                {
+                    if (parts.Count > 0)
+                    {
+                        parts.RemoveAt(parts.Count - 1);
+                    }
+                }
+                else if (part.Length > 0 && part != ".")
+                {
+                    parts.Add(part);
+                }
+            }
+
+            return "/" + string.Join("/", parts);
+        }
 
         private static PropertyInfo? FindIsPrivilegedProcess()
         {

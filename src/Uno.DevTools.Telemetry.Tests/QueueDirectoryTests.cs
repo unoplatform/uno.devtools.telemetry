@@ -211,6 +211,7 @@ namespace Uno.DevTools.Telemetry.Tests
         [DataRow(0x1FF, DisplayName = "0777: everyone may write")]
         [DataRow(0x1C2, DisplayName = "0702: others may write")]
         [DataRow(0x1D2, DisplayName = "0722: the group and others may write")]
+        [DataRow(0x3FF, DisplayName = "1777: everyone may write, with the sticky bit, as /tmp")]
         public void Given_BaseFolderOthersCanWriteTo_When_Prepared_Then_ThereIsNoUsableFolder(int baseMode)
         {
             if (OperatingSystem.IsWindows())
@@ -220,7 +221,7 @@ namespace Uno.DevTools.Telemetry.Tests
             }
 
             // Arrange - e.g. HOME=/tmp, whose .cache another user created first: they could rename uno away after the
-            // check, and put their own folder, or a link, in its place
+            // check, and put their own folder, or a link, in its place. The sticky bit doesn't stop the folder's owner.
             var home = CreateHome();
             var path = QueuePathUnder(home);
             var baseFolder = Path.Join(home, ".cache");
@@ -267,27 +268,92 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
-        public void Given_BaseFolderEveryoneCanWriteToWithTheStickyBit_When_Prepared_Then_TheFolderIsUsed()
+        public void Given_BaseFolderAnotherUserOwns_When_Prepared_Then_ThereIsNoUsableFolderAndNothingIsCreated()
         {
-            if (OperatingSystem.IsWindows())
-            {
-                TestRequirements.Skip("Unix file modes only.", TestRequirements.LinuxUser, TestRequirements.LinuxRoot);
-                return;
-            }
-
-            // Arrange - like /tmp: only an entry's owner may rename it
+            // Arrange - its owner could rename uno away, whatever its mode: the system refuses to change it for anyone else
             var home = CreateHome();
             var path = QueuePathUnder(home);
             var baseFolder = Path.Join(home, ".cache");
-            Directory.CreateDirectory(baseFolder);
-            File.SetUnixFileMode(baseFolder, (UnixFileMode)0x3FF);
+            var modes = FakeModes.Accepting(
+                getMode: _ => 0x1ED,
+                setMode: (folder, _) =>
+                {
+                    if (folder == baseFolder)
+                    {
+                        throw new UnauthorizedAccessException("Operation not permitted");
+                    }
+                });
 
             // Act
-            var prepared = QueueDirectory.TryPrepare(path, Unix(home), out var failure);
+            var prepared = QueueDirectory.TryPrepare(path, Unix(home, modes: modes), out var failure);
 
             // Assert
-            prepared.Should().BeTrue(failure ?? string.Empty);
-            File.GetUnixFileMode(path).Should().Be(OwnerOnly);
+            prepared.Should().BeFalse();
+            failure.Should().Contain("the system refused to set the permissions of").And.Contain(baseFolder).And.Contain("another user");
+            Directory.EnumerateFileSystemEntries(baseFolder).Should().BeEmpty("nothing is created in it");
+        }
+
+        [TestMethod]
+        public void Given_BaseFolderRootOwns_When_PreparedByAnotherUser_Then_TheSystemRefusesAndThereIsNoUsableFolder()
+        {
+            // The real calls: the root of the file system belongs to root, and holds a queue path such as /uno/telemetry/outbox.
+            // Root may change any folder's mode, so the glibc CI job, which runs as an ordinary user, is the one that shows it.
+            if (OperatingSystem.IsWindows() || Environment.IsPrivilegedProcess)
+            {
+                TestRequirements.Skip("Needs a Unix user other than root.", TestRequirements.LinuxUser);
+                return;
+            }
+
+            // Arrange
+            const string baseFolder = "/";
+            var path = Path.Join(baseFolder, $"uno_{Guid.NewGuid():N}", "telemetry", "outbox");
+            var mode = File.GetUnixFileMode(baseFolder);
+            try
+            {
+                // Act
+                var prepared = QueueDirectory.TryPrepare(path, Unix(CreateHome()), out var failure);
+
+                // Assert
+                prepared.Should().BeFalse();
+                failure.Should().Contain("the system refused to set the permissions of /,");
+            }
+            finally
+            {
+                if (File.GetUnixFileMode(baseFolder) != mode)
+                {
+                    File.SetUnixFileMode(baseFolder, mode);
+                }
+            }
+        }
+
+        [TestMethod]
+        public void Given_LinkSwappedInWhileTheFoldersAreSet_When_Prepared_Then_ItIsFoundAndThereIsNoUsableFolder()
+        {
+            // Arrange - someone who can write to the base folder, as its group may, puts a link where uno was just checked:
+            // creating a folder and setting its mode follow it
+            var home = CreateHome();
+            var path = QueuePathUnder(home);
+            var uno = OwnFolders(path)[0];
+            var elsewhere = Path.Join(home, "elsewhere");
+            Directory.CreateDirectory(elsewhere);
+            var swapped = false;
+            var modes = FakeModes.Accepting(setMode: (folder, _) =>
+            {
+                if (folder == uno && !swapped)
+                {
+                    swapped = true;
+                    Directory.Delete(uno);
+                    CreateLinkOrSkip(uno, elsewhere);
+                }
+            });
+
+            // Act
+            var prepared = QueueDirectory.TryPrepare(path, Unix(home, modes: modes), out var failure);
+
+            // Assert
+            swapped.Should().BeTrue();
+            prepared.Should().BeFalse();
+            failure.Should().Contain("is a symbolic link").And.Contain(uno);
         }
 
         [TestMethod]
@@ -326,10 +392,18 @@ namespace Uno.DevTools.Telemetry.Tests
         [TestMethod]
         public void Given_FolderWhoseModeTheSystemWontChange_When_Prepared_Then_ThereIsNoUsableFolderAndTheReasonSaysSo()
         {
-            // Arrange - as for a folder that belongs to another user, who alone may change its mode
+            // Arrange - as for a folder that belongs to another user, who alone may change its mode; the base folder is the
+            // user's own
             var home = CreateHome();
             var path = QueuePathUnder(home);
-            var modes = FakeModes.Accepting(setMode: (_, _) => throw new UnauthorizedAccessException("Operation not permitted"));
+            var baseFolder = Path.Join(home, ".cache");
+            var modes = FakeModes.Accepting(setMode: (folder, _) =>
+            {
+                if (folder != baseFolder)
+                {
+                    throw new UnauthorizedAccessException("Operation not permitted");
+                }
+            });
 
             // Act
             var prepared = QueueDirectory.TryPrepare(path, Unix(home, modes: modes), out var failure);
@@ -378,10 +452,10 @@ namespace Uno.DevTools.Telemetry.Tests
             // where the runtime has none.
             var home = CreateHome();
             var path = QueuePathUnder(home);
-            var askedAbout = new List<string?>();
-            var folders = Unix(home, isRoot: () => true, isElevatedFromAnotherUser: true, modes: FakeModes.Accepting(), isHomeOfRoot: h =>
+            var askedAbout = new List<string>();
+            var folders = Unix(home, isRoot: () => true, isElevatedFromAnotherUser: true, modes: FakeModes.Accepting(), isInHomeOfRoot: folder =>
             {
-                askedAbout.Add(h);
+                askedAbout.Add(folder);
                 return false;
             });
 
@@ -391,14 +465,61 @@ namespace Uno.DevTools.Telemetry.Tests
             // Assert
             prepared.Should().BeFalse();
             failure.Should().Contain("root through sudo or doas");
-            askedAbout.Should().Equal(home);
+            askedAbout.Should().Equal(Path.Join(home, ".cache"));
             Directory.EnumerateFileSystemEntries(home).Should().BeEmpty("root must not create folders in another user's home");
+        }
+
+        [TestMethod]
+        public void Given_RootThroughSudoKeepingTheUsersCacheFolder_When_Chosen_Then_ThereIsNoUsableFolderAndNothingIsCreated()
+        {
+            // Arrange - sudo set HOME to root's, but kept XDG_CACHE_HOME, as with sudo -E where always_set_home is on
+            var rootHome = CreateHome();
+            var userCache = CreateHome();
+            var folders = new UserFolders
+            {
+                IsLinux = true,
+                HomeDirectory = rootHome,
+                XdgCacheHome = userCache,
+                TempPath = Path.GetTempPath(),
+                IsElevatedFromAnotherUser = true,
+                Modes = FakeModes.Accepting(),
+                IsRoot = () => true,
+                IsInHomeOfRoot = folder => folder.StartsWith(rootHome, StringComparison.Ordinal),
+            };
+
+            // Act
+            var path = QueueDirectory.Choose(folders, out var failure);
+
+            // Assert
+            path.Should().BeNull();
+            failure.Should().Contain("root through sudo or doas").And.Contain(userCache);
+            Directory.EnumerateFileSystemEntries(userCache).Should().BeEmpty("root must not create folders in another user's cache");
+        }
+
+        [TestMethod]
+        [DataRow(null, null, null, false, DisplayName = "Neither sudo nor doas")]
+        [DataRow("1000", "someone", null, true, DisplayName = "sudo, from another user")]
+        [DataRow(null, "someone", null, true, DisplayName = "sudo, which gave only the user's name")]
+        [DataRow(null, null, "someone", true, DisplayName = "doas, from another user")]
+        [DataRow("0", "root", null, false, DisplayName = "Root running sudo itself")]
+        [DataRow(null, null, "root", false, DisplayName = "Root running doas itself")]
+        [DataRow("", "", "", false, DisplayName = "Set but empty")]
+        public void Given_SudoOrDoasVariables_When_Read_Then_OnlyAnotherUserCounts(string? sudoUid, string? sudoUser, string? doasUser, bool expected)
+        {
+            var variables = new Dictionary<string, string?>
+            {
+                ["SUDO_UID"] = sudoUid,
+                ["SUDO_USER"] = sudoUser,
+                ["DOAS_USER"] = doasUser,
+            };
+
+            UserFolders.IsStartedForAnotherUser(name => variables.TryGetValue(name, out var value) ? value : null).Should().Be(expected);
         }
 
         [TestMethod]
         [DataRow(false, false, DisplayName = "Root without sudo or doas, as in a container that sets HOME")]
         [DataRow(true, true, DisplayName = "Root through sudo, with root's own home")]
-        public void Given_RootThatIsTheHomesUser_When_Prepared_Then_TheFolderIsUsed(bool isElevatedFromAnotherUser, bool isHomeOfRoot)
+        public void Given_RootThatIsTheHomesUser_When_Prepared_Then_TheFolderIsUsed(bool isElevatedFromAnotherUser, bool isInHomeOfRoot)
         {
             // Arrange
             var home = CreateHome();
@@ -407,7 +528,7 @@ namespace Uno.DevTools.Telemetry.Tests
                 home,
                 isRoot: () => true,
                 isElevatedFromAnotherUser: isElevatedFromAnotherUser,
-                isHomeOfRoot: _ => isHomeOfRoot,
+                isInHomeOfRoot: _ => isInHomeOfRoot,
                 modes: FakeModes.Accepting());
 
             // Act
@@ -472,7 +593,7 @@ namespace Uno.DevTools.Telemetry.Tests
                 TempPath = home,
                 Modes = null,
                 IsRoot = () => throw new InvalidOperationException("must not be called"),
-                IsHomeOfRoot = _ => throw new InvalidOperationException("must not be called"),
+                IsInHomeOfRoot = _ => throw new InvalidOperationException("must not be called"),
             };
 
             // Act
@@ -491,7 +612,7 @@ namespace Uno.DevTools.Telemetry.Tests
             string home,
             Func<bool>? isRoot = null,
             bool isElevatedFromAnotherUser = false,
-            Func<string?, bool>? isHomeOfRoot = null,
+            Func<string, bool>? isInHomeOfRoot = null,
             FolderModes? modes = null,
             bool useDefaultModes = true)
             => new UserFolders
@@ -503,7 +624,7 @@ namespace Uno.DevTools.Telemetry.Tests
                 IsElevatedFromAnotherUser = isElevatedFromAnotherUser,
                 Modes = modes ?? (useDefaultModes ? UnixFolder.DefaultModes : null),
                 IsRoot = isRoot ?? (() => false),
-                IsHomeOfRoot = isHomeOfRoot ?? (_ => false),
+                IsInHomeOfRoot = isInHomeOfRoot ?? (_ => false),
             };
 
         internal static string QueuePathUnder(string home) => Path.Join(home, ".cache", "uno", "telemetry", "outbox");

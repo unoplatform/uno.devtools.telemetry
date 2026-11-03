@@ -476,11 +476,24 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					claim = _claims[file];
 				}
 
-				using (Stream stream = new MemoryStream())
+				// Opening a file follows a link, so a file planted before the folder was made private could lead to a pipe,
+				// which never ends, or a device such as /dev/zero, which never stops: read no further than the length the
+				// file has, and no file longer than the whole storage may be.
+				if (!claim.CanSeek || (ulong)claim.Length > CapacityInBytes)
 				{
-					await claim.CopyToAsync(stream).ConfigureAwait(false);
-					stream.Position = 0;
+					throw new InvalidDataException($"{file} is not a file this storage could have written (seekable: {claim.CanSeek}, length: {(claim.CanSeek ? claim.Length : -1)}).");
+				}
 
+				var content = new byte[claim.Length];
+				var read = 0;
+				int count;
+				while (read < content.Length && (count = await claim.ReadAsync(content, read, content.Length - read).ConfigureAwait(false)) > 0)
+				{
+					read += count;
+				}
+
+				using (Stream stream = new MemoryStream(content, 0, read, writable: false))
+				{
 					var storageTransmissionItem =
 						await StorageTransmission.CreateFromStreamAsync(stream, file, EndpointAddress).ConfigureAwait(false);
 					return storageTransmissionItem;

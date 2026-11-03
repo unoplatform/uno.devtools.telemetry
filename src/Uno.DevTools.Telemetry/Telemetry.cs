@@ -262,8 +262,12 @@ namespace Uno.DevTools.Telemetry
                     if (_storageDirectoryPath is null)
                     {
                         // No folder of the user's own to queue in (see QueueDirectory), so nothing is queued and nothing
-                        // is sent: the instance stays as if its initialization had failed.
-                        TelemetryDiagnostics.Write($"Telemetry is disabled for this instance: {failure}.");
+                        // is sent: the instance stays as if its initialization had failed. No host listens to Trace, so
+                        // the reason also goes to the console when UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT
+                        // is set.
+                        var disabled = $"Telemetry is disabled for this instance: {failure}.";
+                        TelemetryDiagnostics.Write(disabled);
+                        PersistenceChannel.PersistenceChannelDebugLog.WriteLine(disabled);
                         _wasmSender = null;
                         _machineIdTcs.TrySetResult(null);
                         return;

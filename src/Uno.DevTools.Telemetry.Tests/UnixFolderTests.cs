@@ -49,21 +49,32 @@ namespace Uno.DevTools.Telemetry.Tests
         [TestMethod]
         [DataRow("/root", true)]
         [DataRow("/root/", true, DisplayName = "With a trailing separator")]
+        [DataRow("/root/.cache", true, DisplayName = "Inside root's home")]
         [DataRow("/var/toor", true, DisplayName = "The home of another user id 0 entry")]
         [DataRow("/home/someone", false, DisplayName = "Another user's home, as under sudo -E")]
+        [DataRow("/home/someone/.cache", false, DisplayName = "Another user's cache, as when sudo keeps XDG_CACHE_HOME")]
+        [DataRow("/rootkit", false, DisplayName = "A name that starts like root's home")]
+        [DataRow("/root/../home/someone", false, DisplayName = "Leading out of root's home")]
         [DataRow("/", false)]
         [DataRow("/ROOT", false, DisplayName = "Paths are case-sensitive")]
-        public void Given_UserDatabase_When_AskedWhetherAHomeIsRoots_Then_OnlyAUserId0HomeIs(string home, bool expected)
+        public void Given_UserDatabase_When_AskedWhetherAFolderIsInRootsHome_Then_OnlyAUserId0HomeAndWhatIsInItAre(string path, bool expected)
         {
-            UnixFolder.IsHomeOfRoot(home, UserDatabase).Should().Be(expected);
+            UnixFolder.IsInHomeOfRoot(path, UserDatabase).Should().Be(expected);
+        }
+
+        [TestMethod]
+        public void Given_RootListedWithTheRootOfTheFileSystemAsItsHome_When_Asked_Then_NothingIsInIt()
+        {
+            // Otherwise every folder would be inside it
+            UnixFolder.IsInHomeOfRoot("/home/someone/.cache", new[] { "root:x:0:0:root:/:/bin/sh" }).Should().BeFalse();
         }
 
         [TestMethod]
         [DataRow(null)]
         [DataRow("")]
-        public void Given_NoHome_When_AskedWhetherItIsRoots_Then_ItIsNot(string? home)
+        public void Given_NoFolder_When_AskedWhetherItIsInRootsHome_Then_ItIsNot(string? path)
         {
-            UnixFolder.IsHomeOfRoot(home).Should().BeFalse();
+            UnixFolder.IsInHomeOfRoot(path).Should().BeFalse();
         }
 
         [TestMethod]
@@ -75,8 +86,10 @@ namespace Uno.DevTools.Telemetry.Tests
                 return;
             }
 
-            UnixFolder.IsHomeOfRoot(OperatingSystem.IsMacOS() ? "/var/root" : "/root").Should().BeTrue();
-            UnixFolder.IsHomeOfRoot(Path.GetTempPath()).Should().BeFalse();
+            var rootHome = OperatingSystem.IsMacOS() ? "/var/root" : "/root";
+            UnixFolder.IsInHomeOfRoot(rootHome).Should().BeTrue();
+            UnixFolder.IsInHomeOfRoot(Path.Join(rootHome, ".cache")).Should().BeTrue();
+            UnixFolder.IsInHomeOfRoot(Path.GetTempPath()).Should().BeFalse();
         }
 
         [TestMethod]

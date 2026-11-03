@@ -91,14 +91,23 @@ namespace Uno.DevTools.Telemetry
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Outside Windows: the folder that holds the ones this library names must not be writable by users outside its
-        /// owner and group unless it has the sticky bit, or they could rename the queue folder away and put their own, or
-        /// a link to it, in its place. Its group may write to it: that is usually the user's own group, which no one else
-        /// is in, and refusing it would turn telemetry off for most Ubuntu users. Each folder this library names must be a real folder, not a symbolic link: changing a mode follows a
-        /// link, so a link to someone else's folder would be checked in its place. Each is created with mode 0700 and then
-        /// set to it and read back. Only a folder's owner, or root, may change its mode, so once that succeeds every file
-        /// in the folder is the user's own, and none needs checking one by one. The folders are set from the outermost in:
-        /// once one is private, nobody else can replace what is in it.
+        /// Outside Windows: whoever can rename entries in the folder that holds the ones this library names could rename
+        /// the queue folder away and put their own, or a link to it, in its place. So that folder must not be writable by
+        /// users outside its owner and group, even with the sticky bit, which doesn't stop its owner; and it must be the
+        /// user's own, which setting its mode to the one it has shows. Its group may write to it: that is usually the
+        /// user's own group, which no one else is in, and refusing it would turn telemetry off for most Ubuntu users.
+        /// </para>
+        /// <para>
+        /// Each folder this library names must be a real folder, not a symbolic link: changing a mode follows a link, so a
+        /// link to someone else's folder would be checked in its place. They are checked again at the end, for a link
+        /// swapped in meanwhile. Each is created with mode 0700 and then set to it and read back. Only a folder's owner, or
+        /// root, may change its mode, so once that succeeds every file in the folder is the user's own, and none needs
+        /// checking one by one. The folders are set from the outermost in: once one is private, nobody else can replace
+        /// what is in it.
+        /// </para>
+        /// <para>
+        /// Root may change any folder's mode, so for root none of this shows ownership. Under sudo or doas it creates
+        /// nothing outside root's home.
         /// </para>
         /// <para>
         /// On Windows the temp folder's own permissions already keep other users out.
@@ -126,17 +135,18 @@ namespace Uno.DevTools.Telemetry
                     return false;
                 }
 
-                if (folders.IsRoot() && folders.IsElevatedFromAnotherUser && !folders.IsHomeOfRoot(folders.HomeDirectory))
-                {
-                    // As under sudo -E: folders root created in the user's home would be root's, and the user's own runs
-                    // could then no longer queue there. Root without sudo or doas, as in a container, is the home's user.
-                    failure = "it runs as root through sudo or doas, with a home folder that isn't root's, where it creates nothing";
-                    return false;
-                }
-
                 var ownFolders = GetOwnFolders(path);
                 var baseFolder = Path.GetDirectoryName(ownFolders[0])
                     ?? throw new ArgumentException($"{path} is too short to be a queue folder", nameof(path));
+
+                if (folders.IsRoot() && folders.IsElevatedFromAnotherUser && !folders.IsInHomeOfRoot(baseFolder))
+                {
+                    // As under sudo -E, or sudo keeping XDG_CACHE_HOME: folders root created there would be root's, and the
+                    // user's own runs could then no longer queue there. Root without sudo or doas, as in a container, is the
+                    // home's user.
+                    failure = $"it runs as root through sudo or doas, and {baseFolder}, which would hold its queue folder, isn't in root's home, so it creates nothing there";
+                    return false;
+                }
 
                 modes.CreateDirectory(baseFolder);
                 if (!UnixFolder.TryGetMode(modes, baseFolder, out var baseMode, out failure))
@@ -144,9 +154,15 @@ namespace Uno.DevTools.Telemetry
                     return false;
                 }
 
-                if ((baseMode & UnixFolder.WritableByOthers) != 0 && (baseMode & UnixFolder.Sticky) == 0)
+                if ((baseMode & UnixFolder.WritableByOthers) != 0)
                 {
-                    failure = $"other users can write to {baseFolder}, which holds its queue folder (mode {UnixFolder.ToOctal(baseMode)}, without the sticky bit), so they could replace the queue folder";
+                    failure = $"other users can write to {baseFolder}, which holds its queue folder (mode {UnixFolder.ToOctal(baseMode)}), so they could replace the queue folder";
+                    return false;
+                }
+
+                if (UnixFolder.TryConfirmOwner(modes, baseFolder, baseMode) is { } notOwned)
+                {
+                    failure = notOwned;
                     return false;
                 }
 
@@ -154,7 +170,7 @@ namespace Uno.DevTools.Telemetry
                 {
                     if (IsSymbolicLink(folder))
                     {
-                        failure = $"{folder}, on the way to its queue folder, is a symbolic link";
+                        failure = LinkOnTheWay(folder);
                         return false;
                     }
 
@@ -165,6 +181,14 @@ namespace Uno.DevTools.Telemetry
                         failure = notPrivate;
                         return false;
                     }
+                }
+
+                // Creating a folder and setting its mode both follow a link, so one swapped in after the check above would
+                // have been followed: whoever can write to the base folder, as its group may, could have done so.
+                if (ownFolders.FirstOrDefault(IsSymbolicLink) is { } swapped)
+                {
+                    failure = LinkOnTheWay(swapped);
+                    return false;
                 }
 
                 return true;
@@ -192,6 +216,8 @@ namespace Uno.DevTools.Telemetry
         }
 
         private static string CantCreate(Exception e) => $"its queue folder can't be created ({e.GetType().Name}: {e.Message})";
+
+        private static string LinkOnTheWay(string folder) => $"{folder}, on the way to its queue folder, is a symbolic link";
 
         /// <summary>
         /// The folders this library names in <paramref name="path"/>, outermost first.

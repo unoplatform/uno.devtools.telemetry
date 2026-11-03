@@ -134,10 +134,9 @@ namespace Uno.DevTools.Telemetry
         /// </summary>
         internal static bool IsHomeOfRoot(string home, IEnumerable<string> userDatabase)
         {
-            foreach (var line in userDatabase)
+            // name:password:uid:gid:comment:home:shell
+            foreach (var fields in userDatabase.Select(line => line.Split(':')))
             {
-                // name:password:uid:gid:comment:home:shell
-                var fields = line.Split(':');
                 if (fields.Length >= 6 && fields[2] == "0" && fields[5].Length > 0 && SamePath(fields[5], home))
                 {
                     return true;

@@ -43,9 +43,13 @@ namespace Uno.DevTools.Telemetry.Tests
                 {
                     Directory.Delete(dir, true);
                 }
-                catch
+                catch (IOException)
                 {
-                    // Best effort cleanup
+                    // Best effort cleanup: something still holds the folder
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Best effort cleanup: a test left a folder without write permission
                 }
             }
 

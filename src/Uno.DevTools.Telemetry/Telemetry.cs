@@ -24,6 +24,15 @@ namespace Uno.DevTools.Telemetry
         // Stands in for the computer's name, which the SDK would otherwise put in every desktop item.
         internal const string AnonymousRoleInstance = "anonymous";
 
+        // Set on every item an instance sends from memory because it has no queue folder of the user's own, to one of
+        // QueueRefusal's codes: those items would otherwise look like fewer users.
+        internal const string QueueRefusedProperty = "Queue Refused";
+
+        // Without a queue on disk, items wait in memory: sent this often, and on Flush and Dispose for at most as long
+        // as below, so that a process that stops soon after still sends them.
+        private static readonly TimeSpan MemorySendingInterval = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan MemoryFlushTimeout = TimeSpan.FromSeconds(2);
+
         private readonly string? _currentSessionId;
         private TelemetryClient? _client;
         // These collections must be treated as immutable after construction.
@@ -35,6 +44,7 @@ namespace Uno.DevTools.Telemetry
         private string? _storageDirectoryPath;
         private string? _settingsStorageDirectoryPath;
         private PersistenceChannel.PersistenceChannel? _persistenceChannel;
+        private Microsoft.ApplicationInsights.Channel.ITelemetryChannel? _memoryChannel;
         private WasmHttpSender? _wasmSender;
         private readonly string _instrumentationKey;
         private readonly string _eventNamePrefix;
@@ -44,6 +54,7 @@ namespace Uno.DevTools.Telemetry
         private readonly Microsoft.ApplicationInsights.Channel.ITelemetryChannel? _channelOverride;
         private readonly WasmHttpSender? _wasmSenderOverride;
         private readonly UserFolders? _foldersOverride;
+        private readonly Func<Microsoft.ApplicationInsights.Channel.ITelemetryChannel>? _memoryChannelOverride;
         private readonly TaskCompletionSource<string?> _machineIdTcs = new TaskCompletionSource<string?>();
 
         public bool Enabled { get; }
@@ -75,7 +86,8 @@ namespace Uno.DevTools.Telemetry
         // Test seams: an injected channel replaces the persistence channel so the suite can observe the
         // items the desktop pipeline emits in-process, without disk or network I/O; an injected sender
         // takes the WASM send path on any platform so the arguments forwarded to it can be asserted;
-        // injected folders describe another machine to choose the queue and settings folders on.
+        // injected folders describe another machine to choose the queue and settings folders on; an injected
+        // memory channel stands in for the one used when no queue folder can be.
         internal Telemetry(
             string instrumentationKey,
             string eventNamePrefix,
@@ -87,7 +99,8 @@ namespace Uno.DevTools.Telemetry
             string? productName,
             Microsoft.ApplicationInsights.Channel.ITelemetryChannel? channel,
             WasmHttpSender? wasmSender,
-            UserFolders? folders = null)
+            UserFolders? folders = null,
+            Func<Microsoft.ApplicationInsights.Channel.ITelemetryChannel>? memoryChannel = null)
         {
             _instrumentationKey = instrumentationKey;
             _currentDirectoryProvider = currentDirectoryProvider;
@@ -97,17 +110,10 @@ namespace Uno.DevTools.Telemetry
             _channelOverride = channel;
             _wasmSenderOverride = wasmSender;
             _foldersOverride = folders;
+            _memoryChannelOverride = memoryChannel;
 
-            // An opt-out value, or the literal false, in the environment wins over the provider; anything
-            // else falls through to it.
-            if (TelemetryEnvironment.GetOptOut() is bool telemetryOptOut)
-            {
-                Enabled = !telemetryOptOut;
-            }
-            else
-            {
-                Enabled = !enabledProvider?.Invoke() ?? true;
-            }
+            // The environment can only opt out; otherwise the provider decides, and telemetry is on without one.
+            Enabled = !TelemetryEnvironment.IsOptedOut() && enabledProvider?.Invoke() != true;
 
             if (!Enabled)
             {
@@ -186,6 +192,8 @@ namespace Uno.DevTools.Telemetry
             {
                 task.Wait(TimeSpan.FromSeconds(1));
             }
+
+            FlushMemoryChannel();
         }
 
         public async Task FlushAsync(CancellationToken ct)
@@ -201,6 +209,16 @@ namespace Uno.DevTools.Telemetry
             {
                 await Task.WhenAny(task, Task.Delay(-1, ct));
             }
+
+            if (_memoryChannel is Microsoft.ApplicationInsights.Channel.InMemoryChannel inMemory)
+            {
+                // Its own flush waits for the network for as long as a send may take.
+                await Task.WhenAny(inMemory.FlushAsync(ct), Task.Delay(MemoryFlushTimeout, ct));
+            }
+            else
+            {
+                _memoryChannel?.Flush();
+            }
         }
 
         public Task<string?> GetMachineIdAsync(CancellationToken ct)
@@ -210,8 +228,33 @@ namespace Uno.DevTools.Telemetry
 
         public void Dispose()
         {
+            FlushMemoryChannel();
+            _memoryChannel?.Dispose();
             _persistenceChannel?.Dispose();
             _telemetryConfig?.Dispose();
+        }
+
+        /// <summary>
+        /// Sends what waits in memory, when there is no queue on disk, waiting at most <see cref="MemoryFlushTimeout"/>.
+        /// </summary>
+        private void FlushMemoryChannel()
+        {
+            try
+            {
+                if (_memoryChannel is Microsoft.ApplicationInsights.Channel.InMemoryChannel inMemory)
+                {
+                    inMemory.Flush(MemoryFlushTimeout);
+                }
+                else
+                {
+                    _memoryChannel?.Flush();
+                }
+            }
+            catch (Exception e)
+            {
+                // we don't want to fail the tool if telemetry fails.
+                Debug.Fail(e.ToString());
+            }
         }
 
         public void ThreadBlockingTrackEvent(string eventName, IDictionary<string, string> properties, IDictionary<string, double> measurements)
@@ -256,30 +299,38 @@ namespace Uno.DevTools.Telemetry
                 var folders = _foldersOverride ?? UserFolders.Current();
 
                 // An injected channel needs no queue folder, and none is created for it.
+                QueueRefusal? queueRefusal = null;
                 if (_channelOverride is null)
                 {
-                    _storageDirectoryPath = QueueDirectory.Choose(folders, out var failure);
-                    if (_storageDirectoryPath is null)
+                    _storageDirectoryPath = QueueDirectory.Choose(folders, out queueRefusal);
+                    if (queueRefusal is not null)
                     {
-                        // No folder of the user's own to queue in (see QueueDirectory), so nothing is queued and nothing
-                        // is sent: the instance stays as if its initialization had failed. No host listens to Trace, so
-                        // the reason also goes to the console when UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT
-                        // is set.
-                        var disabled = $"Telemetry is disabled for this instance: {failure}.";
-                        TelemetryDiagnostics.Write(disabled);
-                        PersistenceChannel.PersistenceChannelDebugLog.WriteLine(disabled);
-                        _wasmSender = null;
-                        _machineIdTcs.TrySetResult(null);
-                        return;
+                        // No folder of the user's own to queue in (see QueueDirectory), so items are sent from memory,
+                        // and those not sent when the process stops are lost. No host listens to Trace, so the reason
+                        // also goes to the console when UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT is set.
+                        var fromMemory = $"Telemetry can't queue on disk for this instance, so it sends from memory: {queueRefusal.Reason}.";
+                        TelemetryDiagnostics.Write(fromMemory);
+                        PersistenceChannel.PersistenceChannelDebugLog.WriteLine(fromMemory);
                     }
                 }
 
-                _settingsStorageDirectoryPath = GetSettingsDirectoryPath(folders);
+                // Folders refused for the queue aren't trusted with the machine id either: run as root, they may be
+                // another user's. The id is then made for this run, unless the machine has a hardware address to hash.
+                _settingsStorageDirectoryPath = queueRefusal is null ? GetSettingsDirectoryPath(folders) : null;
 
                 Microsoft.ApplicationInsights.Channel.ITelemetryChannel channel;
                 if (_channelOverride is not null)
                 {
                     channel = _channelOverride;
+                }
+                else if (queueRefusal is not null)
+                {
+                    _memoryChannel = _memoryChannelOverride?.Invoke() ?? new Microsoft.ApplicationInsights.Channel.InMemoryChannel
+                    {
+                        EndpointAddress = PersistenceChannel.PersistenceChannel.TelemetryServiceEndpoint,
+                        SendingInterval = MemorySendingInterval,
+                    };
+                    channel = _memoryChannel;
                 }
                 else
                 {
@@ -290,12 +341,19 @@ namespace Uno.DevTools.Telemetry
                     channel = _persistenceChannel;
                 }
 
-                _commonProperties = new TelemetryCommonProperties(
+                var commonProperties = new TelemetryCommonProperties(
                     _settingsStorageDirectoryPath,
                     _versionAssembly,
                     _productName ?? _versionAssembly.GetName().Name ?? "Unknown",
                     _currentDirectoryProvider
                     ).GetTelemetryCommonProperties();
+                if (queueRefusal is not null)
+                {
+                    // The code only, never the reason, which names folders.
+                    commonProperties[QueueRefusedProperty] = queueRefusal.Code;
+                }
+
+                _commonProperties = commonProperties;
                 _commonMeasurements = new Dictionary<string, double>();
 
                 _telemetryConfig = new TelemetryConfiguration

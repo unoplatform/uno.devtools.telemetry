@@ -33,17 +33,17 @@ namespace Uno.DevTools.Telemetry
         /// </summary>
         /// <returns>The folder, or <see langword="null"/> when there is no folder of the user's own to queue in.</returns>
         /// <param name="folders">The machine the folder is chosen on.</param>
-        /// <param name="failure">When no folder is returned, why, to complete "Telemetry is disabled for this instance: ".</param>
-        internal static string? Choose(UserFolders folders, out string? failure)
+        /// <param name="refusal">When no folder is returned, why.</param>
+        internal static string? Choose(UserFolders folders, out QueueRefusal? refusal)
         {
             var path = GetPath(folders.IsWindows, folders.IsMacOS, folders.TmpDir, folders.XdgCacheHome, folders.HomeDirectory, folders.TempPath);
             if (path is null)
             {
-                failure = "the user has no usable home folder to queue it in (it is unset, relative or /)";
+                refusal = new QueueRefusal(QueueRefusal.NoHome, "the user has no usable home folder to queue in (it is unset, relative or /)");
                 return null;
             }
 
-            return TryPrepare(path, folders, out failure) ? path : null;
+            return TryPrepare(path, folders, out refusal) ? path : null;
         }
 
         /// <summary>
@@ -106,8 +106,10 @@ namespace Uno.DevTools.Telemetry
         /// what is in it.
         /// </para>
         /// <para>
-        /// Root may change any folder's mode, so for root none of this shows ownership. Under sudo or doas it creates
-        /// nothing outside root's home.
+        /// Root may change any folder's mode, so for root none of this shows ownership, and a folder it created or changed
+        /// in another user's home would be root's from then on. So root uses no folder outside its own home, whether or not
+        /// sudo or doas started it: as in a container that mounts a user's home and sets <c>HOME</c> to it, or under
+        /// <c>su -m</c>, which say nothing of the user.
         /// </para>
         /// <para>
         /// On Windows the temp folder's own permissions already keep other users out.
@@ -116,10 +118,10 @@ namespace Uno.DevTools.Telemetry
         /// <returns>Whether <paramref name="path"/> can be queued in.</returns>
         /// <param name="path">The queue folder, from <see cref="GetPath"/>.</param>
         /// <param name="folders">The machine the folder is prepared on.</param>
-        /// <param name="failure">When it can't, why, to complete "Telemetry is disabled for this instance: ".</param>
-        internal static bool TryPrepare(string path, UserFolders folders, [NotNullWhen(false)] out string? failure)
+        /// <param name="refusal">When it can't, why.</param>
+        internal static bool TryPrepare(string path, UserFolders folders, [NotNullWhen(false)] out QueueRefusal? refusal)
         {
-            failure = null;
+            refusal = null;
             try
             {
                 if (folders.IsWindows)
@@ -131,7 +133,7 @@ namespace Uno.DevTools.Telemetry
 
                 if (folders.Modes is not { } modes)
                 {
-                    failure = "this runtime can't set a folder's Unix permissions (it predates .NET 7, which added File.SetUnixFileMode)";
+                    refusal = new QueueRefusal(QueueRefusal.NoUnixModes, "this runtime can't set a folder's Unix permissions (it predates .NET 7, which added File.SetUnixFileMode)");
                     return false;
                 }
 
@@ -139,30 +141,29 @@ namespace Uno.DevTools.Telemetry
                 var baseFolder = Path.GetDirectoryName(ownFolders[0])
                     ?? throw new ArgumentException($"{path} is too short to be a queue folder", nameof(path));
 
-                if (folders.IsRoot() && folders.IsElevatedFromAnotherUser && !folders.IsInHomeOfRoot(baseFolder))
+                if (folders.IsRoot() && !folders.IsInHomeOfRoot(baseFolder))
                 {
-                    // As under sudo -E, or sudo keeping XDG_CACHE_HOME: folders root created there would be root's, and the
-                    // user's own runs could then no longer queue there. Root without sudo or doas, as in a container, is the
-                    // home's user.
-                    failure = $"it runs as root through sudo or doas, and {baseFolder}, which would hold its queue folder, isn't in root's home, so it creates nothing there";
+                    // As under sudo -E, sudo keeping XDG_CACHE_HOME, or a container that mounts a user's home: folders root
+                    // created or changed there would be root's, and the user's own runs could then no longer use them.
+                    refusal = new QueueRefusal(QueueRefusal.RootOutsideHome, $"it runs as root, and {baseFolder}, which would hold its queue folder, isn't in root's home, so it creates and changes nothing there");
                     return false;
                 }
 
                 modes.CreateDirectory(baseFolder);
-                if (!UnixFolder.TryGetMode(modes, baseFolder, out var baseMode, out failure))
+                if (!UnixFolder.TryGetMode(modes, baseFolder, out var baseMode, out refusal))
                 {
                     return false;
                 }
 
                 if ((baseMode & UnixFolder.WritableByOthers) != 0)
                 {
-                    failure = $"other users can write to {baseFolder}, which holds its queue folder (mode {UnixFolder.ToOctal(baseMode)}), so they could replace the queue folder";
+                    refusal = new QueueRefusal(QueueRefusal.SharedParent, $"other users can write to {baseFolder}, which holds its queue folder (mode {UnixFolder.ToOctal(baseMode)}), so they could replace the queue folder");
                     return false;
                 }
 
-                if (UnixFolder.TryConfirmOwner(modes, baseFolder, baseMode) is { } notOwned)
+                refusal = UnixFolder.TryConfirmOwner(modes, baseFolder, baseMode);
+                if (refusal is not null)
                 {
-                    failure = notOwned;
                     return false;
                 }
 
@@ -170,15 +171,15 @@ namespace Uno.DevTools.Telemetry
                 {
                     if (IsSymbolicLink(folder))
                     {
-                        failure = LinkOnTheWay(folder);
+                        refusal = LinkOnTheWay(folder);
                         return false;
                     }
 
                     modes.CreateDirectory(folder);
 
-                    if (UnixFolder.TrySetOwnerOnly(modes, folder) is { } notPrivate)
+                    refusal = UnixFolder.TrySetOwnerOnly(modes, folder);
+                    if (refusal is not null)
                     {
-                        failure = notPrivate;
                         return false;
                     }
                 }
@@ -187,7 +188,7 @@ namespace Uno.DevTools.Telemetry
                 // have been followed: whoever can write to the base folder, as its group may, could have done so.
                 if (ownFolders.FirstOrDefault(IsSymbolicLink) is { } swapped)
                 {
-                    failure = LinkOnTheWay(swapped);
+                    refusal = LinkOnTheWay(swapped);
                     return false;
                 }
 
@@ -195,29 +196,31 @@ namespace Uno.DevTools.Telemetry
             }
             catch (IOException e)
             {
-                failure = CantCreate(e);
+                refusal = CantCreate(e);
                 return false;
             }
             catch (UnauthorizedAccessException e)
             {
-                failure = CantCreate(e);
+                refusal = CantCreate(e);
                 return false;
             }
             catch (NotSupportedException e)
             {
-                failure = CantCreate(e);
+                refusal = CantCreate(e);
                 return false;
             }
             catch (ArgumentException e)
             {
-                failure = CantCreate(e);
+                refusal = CantCreate(e);
                 return false;
             }
         }
 
-        private static string CantCreate(Exception e) => $"its queue folder can't be created ({e.GetType().Name}: {e.Message})";
+        private static QueueRefusal CantCreate(Exception e)
+            => new QueueRefusal(QueueRefusal.IOError, $"its queue folder can't be created ({e.GetType().Name}: {e.Message})");
 
-        private static string LinkOnTheWay(string folder) => $"{folder}, on the way to its queue folder, is a symbolic link";
+        private static QueueRefusal LinkOnTheWay(string folder)
+            => new QueueRefusal(QueueRefusal.SymbolicLink, $"{folder}, on the way to its queue folder, is a symbolic link");
 
         /// <summary>
         /// The folders this library names in <paramref name="path"/>, outermost first.

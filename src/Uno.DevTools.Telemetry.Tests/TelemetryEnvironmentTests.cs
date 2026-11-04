@@ -7,8 +7,8 @@ namespace Uno.DevTools.Telemetry.Tests
     /// <summary>
     /// <c>UNO_PLATFORM_TELEMETRY_OPTOUT</c> accepts the usual spellings of on, not only the one that
     /// <see cref="bool.TryParse(string, out bool)"/> knows: a user who sets it to <c>1</c>, as the
-    /// public instructions say, is opted out. Only the literal <c>false</c> forces telemetry on; every
-    /// other value, <c>0</c>, <c>no</c> and <c>off</c> included, reads as unset, so the instance's
+    /// public instructions say, is opted out. The variable can only opt out: every other value,
+    /// <c>false</c>, <c>0</c>, <c>no</c> and <c>off</c> included, reads as unset, so the instance's
     /// <c>enabledProvider</c> decides.
     /// </summary>
     [TestClass]
@@ -71,35 +71,25 @@ namespace Uno.DevTools.Telemetry.Tests
         {
             Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, value);
 
-            TelemetryEnvironment.GetOptOut().Should().BeTrue();
+            TelemetryEnvironment.IsOptedOut().Should().BeTrue();
         }
 
         [TestMethod]
         [DataRow("false")]
-        [DataRow("FALSE", DisplayName = "Upper case")]
-        [DataRow("False", DisplayName = "Mixed case")]
-        [DataRow(" false ", DisplayName = "Surrounding spaces")]
-        [DataRow("\tfalse\n", DisplayName = "Surrounding tab and newline")]
-        public void Given_OptOutSetToFalse_When_Read_Then_IsExplicitlyNotOptedOut(string value)
-        {
-            Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, value);
-
-            TelemetryEnvironment.GetOptOut().Should().BeFalse();
-        }
-
-        [TestMethod]
+        [DataRow("FALSE", DisplayName = "Upper case, false")]
+        [DataRow(" false ", DisplayName = "Surrounding spaces, false")]
         [DataRow("0")]
         [DataRow("no")]
         [DataRow("off")]
         [DataRow("No", DisplayName = "Mixed case")]
         [DataRow("oFf", DisplayName = "Mixed case, three letters")]
         [DataRow(" 0 ", DisplayName = "Surrounding spaces")]
-        public void Given_OptOutSetToAnotherOffValue_When_Read_Then_IsUnset(string value)
+        public void Given_OptOutSetToAnOffValue_When_Read_Then_IsNotOptedOut(string value)
         {
-            // Only the literal false may force telemetry on over the product's own opt-out.
+            // An off value reads as unset: nothing in the environment forces telemetry on.
             Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, value);
 
-            TelemetryEnvironment.GetOptOut().Should().BeNull();
+            TelemetryEnvironment.IsOptedOut().Should().BeFalse();
         }
 
         [TestMethod]
@@ -109,7 +99,7 @@ namespace Uno.DevTools.Telemetry.Tests
         [DataRow("OFF", DisplayName = "Upper case")]
         public void Given_AnOffValue_When_Parsed_Then_IsFalse(string value)
         {
-            // The parser itself reads every off spelling as false; only the opt-out narrows it.
+            // The parser itself reads every off spelling as false; the opt-out treats them all as unset.
             TelemetryEnvironment.ParseFlag(value).Should().BeFalse();
         }
 
@@ -122,17 +112,17 @@ namespace Uno.DevTools.Telemetry.Tests
         [DataRow("enabled")]
         [DataRow("truee")]
         [DataRow("t rue", DisplayName = "Inner whitespace")]
-        public void Given_OptOutSetToAnUnrecognisedValue_When_Read_Then_IsUnset(string value)
+        public void Given_OptOutSetToAnUnrecognisedValue_When_Read_Then_IsNotOptedOut(string value)
         {
             Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, value);
 
-            TelemetryEnvironment.GetOptOut().Should().BeNull();
+            TelemetryEnvironment.IsOptedOut().Should().BeFalse();
         }
 
         [TestMethod]
-        public void Given_OptOutUnset_When_Read_Then_IsUnset()
+        public void Given_OptOutUnset_When_Read_Then_IsNotOptedOut()
         {
-            TelemetryEnvironment.GetOptOut().Should().BeNull();
+            TelemetryEnvironment.IsOptedOut().Should().BeFalse();
         }
 
         [TestMethod]
@@ -195,22 +185,14 @@ namespace Uno.DevTools.Telemetry.Tests
 
         [TestMethod]
         [DataRow("false")]
-        [DataRow("FALSE", DisplayName = "Upper case")]
-        public void Given_OptOutSetToFalse_When_ProviderOptsOut_Then_EnvironmentWins(string value)
-        {
-            // The literal false is distinct from unset: it overrides the provider, as it always has.
-            Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, value);
-
-            CreateTelemetry(new CapturingTelemetryChannel(), enabledProvider: () => true).Enabled.Should().BeTrue();
-        }
-
-        [TestMethod]
+        [DataRow("FALSE", DisplayName = "Upper case, false")]
         [DataRow("0")]
         [DataRow("no")]
         [DataRow("Off")]
-        public void Given_OptOutSetToAnotherOffValue_When_ProviderOptsOut_Then_ProviderDecides(string value)
+        public void Given_OptOutSetToAnOffValue_When_ProviderOptsOut_Then_ProviderDecides(string value)
         {
-            // 0, no and off don't override a product that opted out on its own.
+            // No off value overrides a product that opted out on its own, false included: a leftover
+            // false in a shell profile must not turn telemetry back on behind the user's choice.
             Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, value);
 
             CreateTelemetry(new CapturingTelemetryChannel(), enabledProvider: () => true).Enabled.Should().BeFalse();
@@ -222,6 +204,16 @@ namespace Uno.DevTools.Telemetry.Tests
             Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, "1");
 
             CreateTelemetry(new CapturingTelemetryChannel(), enabledProvider: () => false).Enabled.Should().BeFalse();
+        }
+
+        [TestMethod]
+        [DataRow("false")]
+        [DataRow("0")]
+        public void Given_OptOutSetToAnOffValue_When_ProviderSaysNotOptedOut_Then_ItStaysEnabled(string value)
+        {
+            Environment.SetEnvironmentVariable(TelemetryEnvironment.OptOutVariable, value);
+
+            CreateTelemetry(new CapturingTelemetryChannel(), enabledProvider: () => false).Enabled.Should().BeTrue();
         }
     }
 }

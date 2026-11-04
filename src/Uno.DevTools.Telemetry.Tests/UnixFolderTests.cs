@@ -127,7 +127,7 @@ namespace Uno.DevTools.Telemetry.Tests
             var failure = UnixFolder.TrySetOwnerOnly(Modes(byReflection), dir);
 
             // Assert
-            failure.Should().BeNull();
+            (failure?.Reason).Should().BeNull();
             File.GetUnixFileMode(dir).Should().Be(OwnerOnly);
         }
 
@@ -164,7 +164,8 @@ namespace Uno.DevTools.Telemetry.Tests
 
             var failure = UnixFolder.TrySetOwnerOnly(Modes(byReflection), missing);
 
-            failure.Should().Contain(missing);
+            (failure?.Reason).Should().Contain(missing);
+            (failure?.Code).Should().Be(QueueRefusal.IOError);
         }
 
         [TestMethod]
@@ -187,7 +188,8 @@ namespace Uno.DevTools.Telemetry.Tests
             {
                 var failure = UnixFolder.TrySetOwnerOnly(Modes(byReflection), foreign);
 
-                failure.Should().Contain("the system refused");
+                (failure?.Reason).Should().Contain("the system refused");
+                (failure?.Code).Should().Be(QueueRefusal.NotOwned);
             }
             finally
             {

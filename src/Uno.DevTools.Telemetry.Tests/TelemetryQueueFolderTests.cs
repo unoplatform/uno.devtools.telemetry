@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.ApplicationInsights.DataContracts;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -12,8 +13,9 @@ using System.Threading.Tasks;
 namespace Uno.DevTools.Telemetry.Tests
 {
     /// <summary>
-    /// A desktop instance settles its queue folder once, when it starts. Without a folder of the user's own it queues
-    /// nothing and sends nothing, and says why once; and it never keeps the machine id where it doesn't belong.
+    /// A desktop instance settles its queue folder once, when it starts. Without a folder of the user's own it sends from
+    /// memory, marks every item with the reason's code, and says why once; and it never keeps the machine id where it
+    /// doesn't belong.
     /// </summary>
     [TestClass]
     [DoNotParallelize] // Mutates Trace.Listeners, the current directory and process-wide environment variables.
@@ -77,14 +79,14 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
-        [DataRow("no home", "no usable home folder")]
-        [DataRow("home is /", "no usable home folder")]
-        [DataRow("runtime can't set modes", "this runtime can't set a folder's Unix permissions")]
-        [DataRow("system refuses the mode", "the system refused to set the permissions of")]
-        [DataRow("file system keeps no modes", "doesn't keep Unix permissions")]
-        [DataRow("others can write to the base folder", "other users can write to")]
-        [DataRow("root through sudo with the user's home", "root through sudo or doas")]
-        public async Task Given_NoUsableQueueFolder_When_TelemetryStarts_Then_ItSendsNothingAndSaysWhyOnce(string situation, string reason)
+        [DataRow("no home", "no usable home folder", QueueRefusal.NoHome)]
+        [DataRow("home is /", "no usable home folder", QueueRefusal.NoHome)]
+        [DataRow("runtime can't set modes", "this runtime can't set a folder's Unix permissions", QueueRefusal.NoUnixModes)]
+        [DataRow("system refuses the mode", "the system refused to set the permissions of", QueueRefusal.NotOwned)]
+        [DataRow("file system keeps no modes", "doesn't keep Unix permissions", QueueRefusal.NoUnixPermissions)]
+        [DataRow("others can write to the base folder", "other users can write to", QueueRefusal.SharedParent)]
+        [DataRow("root with a home that isn't root's", "runs as root", QueueRefusal.RootOutsideHome)]
+        public async Task Given_NoUsableQueueFolder_When_TelemetryStarts_Then_ItSendsFromMemoryWithTheCodeAndSaysWhyOnce(string situation, string reason, string code)
         {
             // Arrange
             var home = CreateDirectory();
@@ -96,23 +98,27 @@ namespace Uno.DevTools.Telemetry.Tests
                 "system refuses the mode" => QueueDirectoryTests.Unix(home, modes: FakeModes.Accepting(setMode: (_, _) => throw new UnauthorizedAccessException())),
                 "file system keeps no modes" => QueueDirectoryTests.Unix(home, modes: FakeModes.Accepting(getMode: _ => 0x1ED, setMode: (_, _) => { })),
                 "others can write to the base folder" => QueueDirectoryTests.Unix(home, modes: FakeModes.Accepting(getMode: folder => Path.GetFileName(folder) == ".cache" ? 0x1FF : UnixFolder.OwnerOnlyMode)),
-                "root through sudo with the user's home" => QueueDirectoryTests.Unix(home, isRoot: () => true, isElevatedFromAnotherUser: true, isInHomeOfRoot: _ => false, modes: FakeModes.Accepting()),
+                "root with a home that isn't root's" => QueueDirectoryTests.Unix(home, isRoot: () => true, isInHomeOfRoot: _ => false, modes: FakeModes.Accepting()),
                 _ => throw new ArgumentOutOfRangeException(nameof(situation)),
             };
+            var memory = new CapturingTelemetryChannel();
 
             // Act
-            var telemetry = CreateTelemetry(folders, channel: null);
+            var telemetry = CreateTelemetry(folders, channel: null, memoryChannel: memory);
             telemetry.TrackEvent("Evt", new Dictionary<string, string> { ["foo"] = "bar" }, null);
             telemetry.TrackException(new InvalidOperationException("boom"));
             await telemetry.FlushAsync(CancellationToken.None);
 
             // Assert
-            (await telemetry.GetMachineIdAsync(CancellationToken.None)).Should().BeNull("the instance is disabled, as when its initialization fails");
+            telemetry.Enabled.Should().BeTrue();
+            (await telemetry.GetMachineIdAsync(CancellationToken.None)).Should().NotBeNullOrEmpty("the instance still sends, with an id");
+            memory.Items.Should().HaveCount(2, "the event and the exception are sent from memory")
+                .And.AllSatisfy(item => ((ISupportProperties)item).Properties.Should().Contain(Telemetry.QueueRefusedProperty, code, "the code, and never a path, says why"));
             var messages = _trace.Messages;
             messages.Should().HaveCount(CopiesPerDiagnostic, "the reason is given once")
                 .And.AllSatisfy(message => message.Should().Be(messages[0]))
-                .And.AllSatisfy(message => message.Should().StartWith("Telemetry is disabled for this instance: ").And.Contain(reason));
-            Directory.EnumerateFiles(home, "*", SearchOption.AllDirectories).Should().BeEmpty("nothing is queued or stored");
+                .And.AllSatisfy(message => message.Should().StartWith("Telemetry can't queue on disk for this instance, so it sends from memory: ").And.Contain(reason));
+            Directory.EnumerateFiles(home, "*", SearchOption.AllDirectories).Should().BeEmpty("nothing is queued, and the machine id isn't stored");
         }
 
         [TestMethod]
@@ -182,7 +188,8 @@ namespace Uno.DevTools.Telemetry.Tests
             }
 
             // Assert
-            channel.Items.Should().ContainSingle("the instance still works, with an id for this run");
+            channel.Items.Should().ContainSingle("the instance still works, with an id for this run")
+                .Which.As<ISupportProperties>().Properties.Should().NotContainKey(Telemetry.QueueRefusedProperty, "no queue folder was refused");
             machineId.Should().NotBeNullOrEmpty();
             Directory.EnumerateFileSystemEntries(workingDirectory).Should().BeEmpty("nothing is kept relative to the current directory");
         }
@@ -199,7 +206,8 @@ namespace Uno.DevTools.Telemetry.Tests
             }
 
             // Arrange - the machine is described by the environment, as for any host. Nothing is tracked, so nothing is sent.
-            var root = CreateDirectory();
+            // Root uses no folder outside its own home, and the musl CI job runs as root.
+            var root = CreateDirectory(Environment.IsPrivilegedProcess ? QueueDirectoryTests.HomeOfRoot() : null);
             var home = Path.Join(root, "home");
             var cache = Path.Join(root, "cache");
             Directory.CreateDirectory(home);
@@ -207,10 +215,7 @@ namespace Uno.DevTools.Telemetry.Tests
                 ("HOME", home),
                 ("XDG_CACHE_HOME", cache),
                 ("XDG_CONFIG_HOME", Path.Join(root, "config")),
-                ("TMPDIR", null),
-                ("SUDO_UID", null),
-                ("SUDO_USER", null),
-                ("DOAS_USER", null));
+                ("TMPDIR", null));
             var queue = OperatingSystem.IsMacOS()
                 ? Path.Join(home, "Library", "Caches", "uno", "telemetry", "outbox")
                 : Path.Join(cache, "uno", "telemetry", "outbox");
@@ -295,7 +300,7 @@ namespace Uno.DevTools.Telemetry.Tests
             }
         }
 
-        private Telemetry CreateTelemetry(UserFolders folders, CapturingTelemetryChannel? channel)
+        private Telemetry CreateTelemetry(UserFolders folders, CapturingTelemetryChannel? channel, CapturingTelemetryChannel? memoryChannel = null)
         {
             var telemetry = new Telemetry(
                 DummyInstrumentationKey,
@@ -309,14 +314,16 @@ namespace Uno.DevTools.Telemetry.Tests
                 productName: null,
                 channel,
                 wasmSender: null,
-                folders);
+                folders,
+                // Never the real one in tests: it would send to the service.
+                memoryChannel: () => memoryChannel ?? new CapturingTelemetryChannel());
             _instances.Add(telemetry);
             return telemetry;
         }
 
-        private string CreateDirectory()
+        private string CreateDirectory(string? parent = null)
         {
-            var dir = Path.Join(Path.GetTempPath(), $"telemetry_queue_folder_test_{Guid.NewGuid():N}");
+            var dir = Path.Join(parent ?? Path.GetTempPath(), $"telemetry_queue_folder_test_{Guid.NewGuid():N}");
             _directoriesToCleanup.Add(dir);
             Directory.CreateDirectory(dir);
             return dir;

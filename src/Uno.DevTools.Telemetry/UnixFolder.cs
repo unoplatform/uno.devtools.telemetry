@@ -147,7 +147,7 @@ namespace Uno.DevTools.Telemetry
         /// current user owns it: only a folder's owner, or root, may.
         /// </summary>
         /// <returns><see langword="null"/> when the system allowed it; otherwise why not. Never throws.</returns>
-        internal static string? TryConfirmOwner(FolderModes modes, string path, int mode)
+        internal static QueueRefusal? TryConfirmOwner(FolderModes modes, string path, int mode)
         {
             try
             {
@@ -156,7 +156,7 @@ namespace Uno.DevTools.Telemetry
             }
             catch (UnauthorizedAccessException)
             {
-                return $"the system refused to set the permissions of {path}, which holds its queue folder, as it does for a folder that belongs to another user, who could replace the queue folder";
+                return new QueueRefusal(QueueRefusal.NotOwned, $"the system refused to set the permissions of {path}, which holds its queue folder, as it does for a folder that belongs to another user, who could replace the queue folder");
             }
             catch (IOException e)
             {
@@ -172,14 +172,14 @@ namespace Uno.DevTools.Telemetry
             }
         }
 
-        private static string CantConfirm(string path, Exception e)
-            => $"it can't tell whether {path}, which holds its queue folder, is the user's ({e.GetType().Name}: {e.Message})";
+        private static QueueRefusal CantConfirm(string path, Exception e)
+            => new QueueRefusal(QueueRefusal.IOError, $"it can't tell whether {path}, which holds its queue folder, is the user's ({e.GetType().Name}: {e.Message})");
 
         /// <summary>
         /// Sets the mode of the folder at <paramref name="path"/> to 0700, and reads it back.
         /// </summary>
         /// <returns><see langword="null"/> when the folder now has mode 0700; otherwise why not. Never throws.</returns>
-        internal static string? TrySetOwnerOnly(FolderModes modes, string path)
+        internal static QueueRefusal? TrySetOwnerOnly(FolderModes modes, string path)
         {
             try
             {
@@ -188,7 +188,7 @@ namespace Uno.DevTools.Telemetry
             catch (UnauthorizedAccessException)
             {
                 // Only a folder's owner, or root, may change its mode.
-                return $"the system refused to set the permissions of {path} to owner-only, as it does for a folder that belongs to another user";
+                return new QueueRefusal(QueueRefusal.NotOwned, $"the system refused to set the permissions of {path} to owner-only, as it does for a folder that belongs to another user");
             }
             catch (IOException e)
             {
@@ -203,53 +203,53 @@ namespace Uno.DevTools.Telemetry
                 return CantSet(path, e);
             }
 
-            if (!TryGetMode(modes, path, out var mode, out var failure))
+            if (!TryGetMode(modes, path, out var mode, out var refusal))
             {
-                return failure;
+                return refusal;
             }
 
             return mode == OwnerOnlyMode
                 ? null
-                : $"the file system of {path} doesn't keep Unix permissions: it is mode {ToOctal(mode)} after being set to {ToOctal(OwnerOnlyMode)}";
+                : new QueueRefusal(QueueRefusal.NoUnixPermissions, $"the file system of {path} doesn't keep Unix permissions: it is mode {ToOctal(mode)} after being set to {ToOctal(OwnerOnlyMode)}");
         }
 
         /// <summary>
         /// Reads the mode of <paramref name="path"/>, following a symbolic link.
         /// </summary>
         /// <returns>Whether it could. Never throws.</returns>
-        internal static bool TryGetMode(FolderModes modes, string path, out int mode, [NotNullWhen(false)] out string? failure)
+        internal static bool TryGetMode(FolderModes modes, string path, out int mode, [NotNullWhen(false)] out QueueRefusal? refusal)
         {
             try
             {
                 mode = modes.GetMode(path);
-                failure = null;
+                refusal = null;
                 return true;
             }
             catch (IOException e)
             {
-                return CantRead(path, e, out mode, out failure);
+                return CantRead(path, e, out mode, out refusal);
             }
             catch (UnauthorizedAccessException e)
             {
-                return CantRead(path, e, out mode, out failure);
+                return CantRead(path, e, out mode, out refusal);
             }
             catch (NotSupportedException e)
             {
-                return CantRead(path, e, out mode, out failure);
+                return CantRead(path, e, out mode, out refusal);
             }
             catch (ArgumentException e)
             {
-                return CantRead(path, e, out mode, out failure);
+                return CantRead(path, e, out mode, out refusal);
             }
         }
 
-        private static string CantSet(string path, Exception e)
-            => $"the permissions of {path} couldn't be set to owner-only ({e.GetType().Name}: {e.Message})";
+        private static QueueRefusal CantSet(string path, Exception e)
+            => new QueueRefusal(QueueRefusal.IOError, $"the permissions of {path} couldn't be set to owner-only ({e.GetType().Name}: {e.Message})");
 
-        private static bool CantRead(string path, Exception e, out int mode, out string failure)
+        private static bool CantRead(string path, Exception e, out int mode, out QueueRefusal refusal)
         {
             mode = 0;
-            failure = $"the permissions of {path} couldn't be read ({e.GetType().Name}: {e.Message})";
+            refusal = new QueueRefusal(QueueRefusal.IOError, $"the permissions of {path} couldn't be read ({e.GetType().Name}: {e.Message})");
             return false;
         }
 

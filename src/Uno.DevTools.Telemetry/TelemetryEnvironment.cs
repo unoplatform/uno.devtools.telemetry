@@ -14,25 +14,15 @@ namespace Uno.DevTools.Telemetry
         internal const string FileVariable = "UNO_PLATFORM_TELEMETRY_FILE";
 
         /// <summary>
-        /// Tri-state read of <c>UNO_PLATFORM_TELEMETRY_OPTOUT</c>: <see langword="true"/> for any on value
-        /// <see cref="ParseFlag"/> recognises, <see langword="false"/> for the literal word <c>false</c>
-        /// only, <see langword="null"/> otherwise. The <see cref="Telemetry"/> constructor treats an
-        /// explicit <see langword="false"/> as forced-enable, overriding its <c>enabledProvider</c>, so the
-        /// three states must stay distinct here.
+        /// Whether <c>UNO_PLATFORM_TELEMETRY_OPTOUT</c> holds an on value <see cref="ParseFlag"/> recognises.
         /// </summary>
-        internal static bool? GetOptOut()
-        {
-            var value = Environment.GetEnvironmentVariable(OptOutVariable);
-
-            return ParseFlag(value) switch
-            {
-                true => true,
-                // Forcing telemetry on over the product's own opt-out stays limited to the word it has
-                // always been, so 0, no and off read as unset and leave the decision to the product.
-                false when string.Equals(value?.Trim(), "false", StringComparison.OrdinalIgnoreCase) => false,
-                _ => null,
-            };
-        }
+        /// <remarks>
+        /// The variable can only turn telemetry off. Any other value, <c>false</c> included, reads as unset and
+        /// leaves the decision to the product: a <c>false</c> left over in a shell profile must not override an
+        /// opt-out the user chose in the product. It used to force telemetry on, and no product set it.
+        /// </remarks>
+        internal static bool IsOptedOut()
+            => ParseFlag(Environment.GetEnvironmentVariable(OptOutVariable)) == true;
 
         /// <summary>
         /// Parses an on/off environment value: <c>1</c>, <c>true</c>, <c>yes</c> and <c>on</c> are
@@ -48,8 +38,6 @@ namespace Uno.DevTools.Telemetry
                 "0" or "FALSE" or "NO" or "OFF" => false,
                 _ => null,
             };
-
-        private static bool IsOptedOut() => GetOptOut() == true;
 
         /// <summary>
         /// Returns the <c>UNO_PLATFORM_TELEMETRY_FILE</c> path when file-based telemetry should be

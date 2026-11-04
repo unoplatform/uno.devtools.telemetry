@@ -170,7 +170,7 @@ namespace Uno.DevTools.Telemetry.Tests
             var prepared = QueueDirectory.TryPrepare(path, Unix(home, modes: byReflection ? UnixFolder.ReflectedModes : UnixFolder.DefaultModes), out var failure);
 
             // Assert
-            prepared.Should().BeTrue(failure ?? string.Empty);
+            prepared.Should().BeTrue(failure?.Reason ?? string.Empty);
             File.GetUnixFileMode(Path.Join(home, ".cache")).Should().Be(OwnerOnly, "a missing folder is created with mode 0700 too");
             foreach (var folder in OwnFolders(path))
             {
@@ -200,7 +200,7 @@ namespace Uno.DevTools.Telemetry.Tests
             var prepared = QueueDirectory.TryPrepare(path, Unix(home), out var failure);
 
             // Assert
-            prepared.Should().BeTrue(failure ?? string.Empty);
+            prepared.Should().BeTrue(failure?.Reason ?? string.Empty);
             foreach (var folder in OwnFolders(path))
             {
                 File.GetUnixFileMode(folder).Should().Be(OwnerOnly, folder);
@@ -233,7 +233,8 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Assert
             prepared.Should().BeFalse();
-            failure.Should().Contain("other users can write to").And.Contain(baseFolder);
+            (failure?.Reason).Should().Contain("other users can write to").And.Contain(baseFolder);
+            (failure?.Code).Should().Be(QueueRefusal.SharedParent);
             Directory.EnumerateFileSystemEntries(baseFolder).Should().BeEmpty("nothing is created in it");
         }
 
@@ -259,7 +260,7 @@ namespace Uno.DevTools.Telemetry.Tests
             var prepared = QueueDirectory.TryPrepare(path, Unix(home), out var failure);
 
             // Assert
-            prepared.Should().BeTrue(failure ?? string.Empty);
+            prepared.Should().BeTrue(failure?.Reason ?? string.Empty);
             File.GetUnixFileMode(baseFolder).Should().Be((UnixFileMode)baseMode, "the base folder isn't the library's to change");
             foreach (var folder in OwnFolders(path))
             {
@@ -289,7 +290,8 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Assert
             prepared.Should().BeFalse();
-            failure.Should().Contain("the system refused to set the permissions of").And.Contain(baseFolder).And.Contain("another user");
+            (failure?.Reason).Should().Contain("the system refused to set the permissions of").And.Contain(baseFolder).And.Contain("another user");
+            (failure?.Code).Should().Be(QueueRefusal.NotOwned);
             Directory.EnumerateFileSystemEntries(baseFolder).Should().BeEmpty("nothing is created in it");
         }
 
@@ -315,7 +317,7 @@ namespace Uno.DevTools.Telemetry.Tests
 
                 // Assert
                 prepared.Should().BeFalse();
-                failure.Should().Contain("the system refused to set the permissions of /,");
+                (failure?.Reason).Should().Contain("the system refused to set the permissions of /,");
             }
             finally
             {
@@ -353,7 +355,8 @@ namespace Uno.DevTools.Telemetry.Tests
             // Assert
             swapped.Should().BeTrue();
             prepared.Should().BeFalse();
-            failure.Should().Contain("is a symbolic link").And.Contain(uno);
+            (failure?.Reason).Should().Contain("is a symbolic link").And.Contain(uno);
+            (failure?.Code).Should().Be(QueueRefusal.SymbolicLink);
         }
 
         [TestMethod]
@@ -382,7 +385,8 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Assert
             prepared.Should().BeFalse();
-            failure.Should().Contain("is a symbolic link").And.Contain(link);
+            (failure?.Reason).Should().Contain("is a symbolic link").And.Contain(link);
+            (failure?.Code).Should().Be(QueueRefusal.SymbolicLink);
             if (!dangling && !OperatingSystem.IsWindows())
             {
                 File.GetUnixFileMode(target).Should().Be(targetMode, "a link must not be followed to change its target");
@@ -410,7 +414,8 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Assert
             prepared.Should().BeFalse();
-            failure.Should().Contain("the system refused to set the permissions of").And.Contain("owner-only");
+            (failure?.Reason).Should().Contain("the system refused to set the permissions of").And.Contain("owner-only");
+            (failure?.Code).Should().Be(QueueRefusal.NotOwned);
         }
 
         [TestMethod]
@@ -426,7 +431,8 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Assert
             prepared.Should().BeFalse();
-            failure.Should().Contain("doesn't keep Unix permissions").And.Contain("0755").And.NotContain("another user");
+            (failure?.Reason).Should().Contain("doesn't keep Unix permissions").And.Contain("0755").And.NotContain("another user");
+            (failure?.Code).Should().Be(QueueRefusal.NoUnixPermissions);
         }
 
         [TestMethod]
@@ -441,19 +447,21 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Assert
             prepared.Should().BeFalse();
-            failure.Should().Contain("runtime");
+            (failure?.Reason).Should().Contain("runtime");
+            (failure?.Code).Should().Be(QueueRefusal.NoUnixModes);
             Directory.EnumerateFileSystemEntries(home).Should().BeEmpty();
         }
 
         [TestMethod]
-        public void Given_RootThroughSudoWithTheUsersHome_When_Prepared_Then_ThereIsNoUsableFolderAndNothingIsCreated()
+        public void Given_RootWithAHomeThatIsntRoots_When_Prepared_Then_ThereIsNoUsableFolderAndNothingIsCreated()
         {
-            // Arrange - as under sudo -E, which keeps the user's HOME. Fake modes, so the check is reached on Windows too,
-            // where the runtime has none.
+            // Arrange - as under sudo -E, or in a container that mounts the user's home and sets HOME to it: whether sudo
+            // or doas started it makes no difference. Fake modes, so the check is reached on Windows too, where the
+            // runtime has none.
             var home = CreateHome();
             var path = QueuePathUnder(home);
             var askedAbout = new List<string>();
-            var folders = Unix(home, isRoot: () => true, isElevatedFromAnotherUser: true, modes: FakeModes.Accepting(), isInHomeOfRoot: folder =>
+            var folders = Unix(home, isRoot: () => true, modes: FakeModes.Accepting(), isInHomeOfRoot: folder =>
             {
                 askedAbout.Add(folder);
                 return false;
@@ -464,15 +472,16 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Assert
             prepared.Should().BeFalse();
-            failure.Should().Contain("root through sudo or doas");
+            (failure?.Code).Should().Be(QueueRefusal.RootOutsideHome);
+            (failure?.Reason).Should().Contain("runs as root").And.Contain(Path.Join(home, ".cache"));
             askedAbout.Should().Equal(Path.Join(home, ".cache"));
             Directory.EnumerateFileSystemEntries(home).Should().BeEmpty("root must not create folders in another user's home");
         }
 
         [TestMethod]
-        public void Given_RootThroughSudoKeepingTheUsersCacheFolder_When_Chosen_Then_ThereIsNoUsableFolderAndNothingIsCreated()
+        public void Given_RootKeepingTheUsersCacheFolder_When_Chosen_Then_ThereIsNoUsableFolderAndNothingIsCreated()
         {
-            // Arrange - sudo set HOME to root's, but kept XDG_CACHE_HOME, as with sudo -E where always_set_home is on
+            // Arrange - HOME is root's, but XDG_CACHE_HOME is the user's, as with sudo -E where always_set_home is on
             var rootHome = CreateHome();
             var userCache = CreateHome();
             var folders = new UserFolders
@@ -481,7 +490,6 @@ namespace Uno.DevTools.Telemetry.Tests
                 HomeDirectory = rootHome,
                 XdgCacheHome = userCache,
                 TempPath = Path.GetTempPath(),
-                IsElevatedFromAnotherUser = true,
                 Modes = FakeModes.Accepting(),
                 IsRoot = () => true,
                 IsInHomeOfRoot = folder => folder.StartsWith(rootHome, StringComparison.Ordinal),
@@ -492,60 +500,34 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Assert
             path.Should().BeNull();
-            failure.Should().Contain("root through sudo or doas").And.Contain(userCache);
+            (failure?.Code).Should().Be(QueueRefusal.RootOutsideHome);
+            (failure?.Reason).Should().Contain(userCache);
             Directory.EnumerateFileSystemEntries(userCache).Should().BeEmpty("root must not create folders in another user's cache");
         }
 
         [TestMethod]
-        [DataRow(null, null, null, false, DisplayName = "Neither sudo nor doas")]
-        [DataRow("1000", "someone", null, true, DisplayName = "sudo, from another user")]
-        [DataRow(null, "someone", null, true, DisplayName = "sudo, which gave only the user's name")]
-        [DataRow(null, null, "someone", true, DisplayName = "doas, from another user")]
-        [DataRow("0", "root", null, false, DisplayName = "Root running sudo itself")]
-        [DataRow(null, null, "root", false, DisplayName = "Root running doas itself")]
-        [DataRow("", "", "", false, DisplayName = "Set but empty")]
-        public void Given_SudoOrDoasVariables_When_Read_Then_OnlyAnotherUserCounts(string? sudoUid, string? sudoUser, string? doasUser, bool expected)
-        {
-            var variables = new Dictionary<string, string?>
-            {
-                ["SUDO_UID"] = sudoUid,
-                ["SUDO_USER"] = sudoUser,
-                ["DOAS_USER"] = doasUser,
-            };
-
-            UserFolders.IsStartedForAnotherUser(name => variables.TryGetValue(name, out var value) ? value : null).Should().Be(expected);
-        }
-
-        [TestMethod]
-        [DataRow(false, false, DisplayName = "Root without sudo or doas, as in a container that sets HOME")]
-        [DataRow(true, true, DisplayName = "Root through sudo, with root's own home")]
-        public void Given_RootThatIsTheHomesUser_When_Prepared_Then_TheFolderIsUsed(bool isElevatedFromAnotherUser, bool isInHomeOfRoot)
+        public void Given_RootWithItsOwnHome_When_Prepared_Then_TheFolderIsUsed()
         {
             // Arrange
             var home = CreateHome();
             var path = QueuePathUnder(home);
-            var folders = Unix(
-                home,
-                isRoot: () => true,
-                isElevatedFromAnotherUser: isElevatedFromAnotherUser,
-                isInHomeOfRoot: _ => isInHomeOfRoot,
-                modes: FakeModes.Accepting());
+            var folders = Unix(home, isRoot: () => true, isInHomeOfRoot: _ => true, modes: FakeModes.Accepting());
 
             // Act
             var prepared = QueueDirectory.TryPrepare(path, folders, out var failure);
 
             // Assert
-            prepared.Should().BeTrue(failure ?? string.Empty);
+            prepared.Should().BeTrue(failure?.Reason ?? string.Empty);
             Directory.Exists(path).Should().BeTrue();
         }
 
         [TestMethod]
-        [DataRow(true, false, DisplayName = "Through sudo or doas, with a home that isn't root's: nothing is created")]
-        [DataRow(false, true, DisplayName = "Without sudo or doas, as in a container: the folder is made private")]
-        public void Given_RunningAsRoot_When_Prepared_Then_OnlyTheSudoCaseIsRefused(bool isElevatedFromAnotherUser, bool expected)
+        [DataRow(true, true, DisplayName = "In root's home: the folder is made private")]
+        [DataRow(false, false, DisplayName = "Outside root's home: nothing is created")]
+        public void Given_RunningAsRoot_When_Prepared_Then_OnlyRootsOwnHomeIsUsed(bool inHomeOfRoot, bool expected)
         {
-            // The real checks and calls, except for whether sudo started the process: only a process running as root can
-            // take this path. The musl CI job runs as root.
+            // The real checks and calls, /etc/passwd included: only a process running as root can take this path. The musl
+            // CI job runs as root.
             if (OperatingSystem.IsWindows() || !Environment.IsPrivilegedProcess)
             {
                 TestRequirements.Skip("Needs a process running as root.", TestRequirements.LinuxRoot);
@@ -553,7 +535,7 @@ namespace Uno.DevTools.Telemetry.Tests
             }
 
             // Arrange
-            var home = CreateHome();
+            var home = inHomeOfRoot ? CreateHome(HomeOfRoot()) : CreateHome();
             var path = QueuePathUnder(home);
             var folders = new UserFolders
             {
@@ -561,21 +543,20 @@ namespace Uno.DevTools.Telemetry.Tests
                 IsMacOS = OperatingSystem.IsMacOS(),
                 HomeDirectory = home,
                 TempPath = Path.GetTempPath(),
-                IsElevatedFromAnotherUser = isElevatedFromAnotherUser,
             };
 
             // Act
             var prepared = QueueDirectory.TryPrepare(path, folders, out var failure);
 
             // Assert
-            prepared.Should().Be(expected, failure ?? string.Empty);
+            prepared.Should().Be(expected, failure?.Reason ?? string.Empty);
             if (expected)
             {
                 File.GetUnixFileMode(path).Should().Be(OwnerOnly);
             }
             else
             {
-                (failure ?? string.Empty).Should().Contain("root");
+                (failure?.Code).Should().Be(QueueRefusal.RootOutsideHome);
                 Directory.EnumerateFileSystemEntries(home).Should().BeEmpty();
             }
         }
@@ -600,7 +581,7 @@ namespace Uno.DevTools.Telemetry.Tests
             var prepared = QueueDirectory.TryPrepare(path, folders, out var failure);
 
             // Assert
-            prepared.Should().BeTrue(failure ?? string.Empty);
+            prepared.Should().BeTrue(failure?.Reason ?? string.Empty);
             Directory.Exists(path).Should().BeTrue("the storage never creates its folder");
         }
 
@@ -611,7 +592,6 @@ namespace Uno.DevTools.Telemetry.Tests
         internal static UserFolders Unix(
             string home,
             Func<bool>? isRoot = null,
-            bool isElevatedFromAnotherUser = false,
             Func<string, bool>? isInHomeOfRoot = null,
             FolderModes? modes = null,
             bool useDefaultModes = true)
@@ -621,7 +601,6 @@ namespace Uno.DevTools.Telemetry.Tests
                 HomeDirectory = home,
                 TempPath = Path.GetTempPath(),
                 ApplicationData = Path.Join(home, ".config"),
-                IsElevatedFromAnotherUser = isElevatedFromAnotherUser,
                 Modes = modes ?? (useDefaultModes ? UnixFolder.DefaultModes : null),
                 IsRoot = isRoot ?? (() => false),
                 IsInHomeOfRoot = isInHomeOfRoot ?? (_ => false),
@@ -629,9 +608,17 @@ namespace Uno.DevTools.Telemetry.Tests
 
         internal static string QueuePathUnder(string home) => Path.Join(home, ".cache", "uno", "telemetry", "outbox");
 
-        private string CreateHome()
+        /// <summary>
+        /// Root's home, as <c>/etc/passwd</c> lists it.
+        /// </summary>
+        internal static string HomeOfRoot()
+            => File.ReadAllLines("/etc/passwd")
+                .Select(line => line.Split(':'))
+                .First(fields => fields.Length >= 6 && fields[2] == "0")[5];
+
+        private string CreateHome(string? parent = null)
         {
-            var dir = Path.Join(Path.GetTempPath(), $"telemetry_queue_test_{Guid.NewGuid():N}");
+            var dir = Path.Join(parent ?? Path.GetTempPath(), $"telemetry_queue_test_{Guid.NewGuid():N}");
             _directoriesToCleanup.Add(dir);
             Directory.CreateDirectory(dir);
             return dir;

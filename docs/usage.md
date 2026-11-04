@@ -117,7 +117,7 @@ Notes:
 #### Operational suppression and diagnostics
 
 If attribution must be turned off without a code change:
-- `UNO_PLATFORM_TELEMETRY_OPTOUT=1` (or `true`, `yes`, `on`; see [Environment Variables](#environment-variables))
+- `UNO_PLATFORM_TELEMETRY_OPTOUT=1` (or `true`; see [Environment Variables](#environment-variables))
   disables telemetry entirely, including the file-based lane
   selected through `UNO_PLATFORM_TELEMETRY_FILE`, so the id is neither sent nor written to disk. A
   `FileTelemetry` instance the application constructs directly is not governed by the opt-out.
@@ -155,19 +155,22 @@ If attribution must be turned off without a code change:
   until the next start.
 - A queued file is read only if it is a regular file no longer than the whole queue may hold
   (10 MB); a link to a device or a pipe, or a longer file, is set aside as corrupt.
-- When there is no such folder, the instance queues nothing and sends nothing, and writes one
-  `Trace` line naming the reason; with `UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT` set,
-  the reason is also written to the console. That happens when the user has no home folder, or a
-  home of `/`; when users outside its group can write to the folder that holds the queue folder, or
-  that folder isn't the user's; when a folder can't be
-  created, is a symbolic link, belongs to another user (the system refuses to change its mode), or
-  is on a file system that keeps no Unix permissions; when the runtime can't set a folder's mode
-  (the netstandard2.0 build in a runtime older than .NET 7); and when the process runs as root
-  through sudo or doas for another user (`SUDO_UID`, `SUDO_USER` or `DOAS_USER` names a user other
-  than root) and the queue folder would be outside root's home, as under `sudo -E`, or when sudo
-  keeps `XDG_CACHE_HOME`; it then creates nothing. Root without those, as in a container, queues in
-  its home like any user; so does root reached through `su -m` or `su -p`, which set none of them.
-  Without a usable home the machine id isn't stored either.
+- Run as root, the package uses no folder outside root's home, as `/etc/passwd` lists it, whether
+  or not sudo or doas started it: a folder root created or changed in another user's home, as under
+  `sudo -E`, with sudo keeping `XDG_CACHE_HOME`, or in a container that mounts a user's home and
+  sets `HOME` to it, would be root's from then on.
+- When there is no such folder, the instance sends from memory instead: nothing is written to disk,
+  items are sent every few seconds and on `Flush`, `FlushAsync` and `Dispose` (waiting at most two
+  seconds), and those still waiting when the process stops are lost. Every item it sends carries a
+  `Queue Refused` property holding a fixed code, never a path: `no-home` (no home folder, or a home
+  of `/`), `no-unix-modes` (the netstandard2.0 build in a runtime older than .NET 7, which can't set
+  a folder's mode), `root-outside-home`, `shared-parent` (users outside its group can write to the
+  folder that holds the queue folder), `not-owned` (that folder, or one the package names, isn't the
+  user's: the system refuses to change its mode), `no-unix-permissions` (a file system that keeps
+  none), `symbolic-link`, or `io-error`. It also writes one `Trace` line naming the reason; with
+  `UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT` set, the reason is also written to the
+  console. The machine id isn't stored in that case either, since the same folders can't be
+  trusted: a machine with no hardware address to hash gets a new id each run.
 - Earlier versions of the package queue under `Path.GetTempPath()/.uno/telemetry/outbox` on every
   platform, and versions before those under `Path.GetTempPath()/.uno/telemetry`: on Linux, and on
   macOS when `TMPDIR` is unset, that is the shared `/tmp`, where while a user is signed in their
@@ -185,7 +188,8 @@ By default, telemetry is persisted locally before being sent. You can configure 
 ## Environment Variables
 | Variable | Purpose |
 | --- | --- |
-| `UNO_PLATFORM_TELEMETRY_OPTOUT` | Set to `1`, `true`, `yes` or `on` to disable telemetry, including the file-based lane selected by `UNO_PLATFORM_TELEMETRY_FILE`. Only `false` explicitly keeps telemetry enabled, overriding the `enabledProvider` passed to the `Telemetry` constructor. Values are case-insensitive and surrounding whitespace is ignored. Any other value, including `0`, `no`, `off` and an empty one, counts as unset: `enabledProvider` decides, and telemetry is enabled when there is none. |
+| `UNO_PLATFORM_TELEMETRY_OPTOUT` | Set to `1` or `true` to disable telemetry, including the file-based lane selected by `UNO_PLATFORM_TELEMETRY_FILE`. Case and surrounding whitespace are ignored. The variable can only disable telemetry: any other value, `false` and `0` included, counts as unset, so the `enabledProvider` passed to the `Telemetry` constructor decides, and telemetry is enabled when there is none. |
+| `UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT` | Set to `1` or `true` to write the desktop channel's diagnostics to the console, including why an instance can't queue on disk and sends from memory. For support: no host listens to `Trace`, where the reason otherwise goes. |
 | `UNO_PLATFORM_TELEMETRY_FILE` | When set, telemetry is logged to the specified file path using `FileTelemetry` instead of Application Insights. On .NET 8+, FileTelemetry uses `TimeProvider` for testable timestamps; on .NET Standard 2.0, it falls back to system time. |
 
 > [!NOTE]

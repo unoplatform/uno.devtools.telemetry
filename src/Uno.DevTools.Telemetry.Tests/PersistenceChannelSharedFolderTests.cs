@@ -14,7 +14,8 @@ using Microsoft.ApplicationInsights.DataContracts;
 namespace Uno.DevTools.Telemetry.Tests
 {
 	/// <summary>
-	///     Several channels, in one process or many, share the same storage folder. Each transmission must be sent once.
+	///     Several channels, in one process or many, share the same storage folder. Each transmission must be sent once, and
+	///     a file someone else left in the folder must not decide what is sent, or where.
 	/// </summary>
 	[TestClass]
 	public class PersistenceChannelSharedFolderTests
@@ -159,6 +160,103 @@ namespace Uno.DevTools.Telemetry.Tests
 			endpoint.RequestCount.Should().Be(EventCount, "each event must be posted exactly once");
 		}
 
+		[TestMethod]
+		public async Task Given_QueuedFileNamingAnotherAddress_When_Sent_Then_ItGoesToTheConfiguredEndpoint()
+		{
+			// Arrange - a file left in the folder by someone else, naming an address of their choosing
+			var storageDir = GetTempStorageDirectory();
+			using var configured = new CountingHttpEndpoint();
+			using var planted = new CountingHttpEndpoint();
+			using var channel = CreateChannel(storageDir, configured.Address);
+			WriteQueuedFile(storageDir, planted.Address);
+
+			// Act
+			var sent = await WaitUntilAsync(
+				() => configured.RequestCount + planted.RequestCount >= 1 && Directory.GetFiles(storageDir, "*.trn").Length == 0,
+				TimeSpan.FromSeconds(30),
+				DefaultPollInterval).ConfigureAwait(false);
+
+			// Assert
+			sent.Should().BeTrue("the queued file should be sent and deleted");
+			planted.RequestCount.Should().Be(0, "a queued file must not choose where it is sent");
+			configured.RequestCount.Should().Be(1);
+		}
+
+		[TestMethod]
+		[DataRow(null)]
+		[DataRow("")]
+		public void Given_NoStoragePath_When_Enqueued_Then_NothingIsStored(string? storageDir)
+		{
+			// Arrange - there used to be a default folder, which could be one that other users share
+			var storage = CreateStorage(storageDir);
+
+			// Act
+			storage.EnqueueAsync(CreateTransmission()).GetAwaiter().GetResult();
+
+			// Assert
+			storage.StorageDirectoryPath.Should().BeNull();
+			storage.Peek().Should().BeNull();
+		}
+
+		[TestMethod]
+		public void Given_QueuedFileNamingAnotherAddress_When_Peek_Then_TheTransmissionGoesToTheStorageEndpoint()
+		{
+			// Arrange
+			var storageDir = GetTempStorageDirectory();
+			var storage = CreateStorage(storageDir);
+			storage.EndpointAddress = new Uri("https://configured.example/v2/track");
+			WriteQueuedFile(storageDir, "https://planted.example/collect");
+
+			// Act
+			using var peeked = storage.Peek();
+
+			// Assert
+			peeked.Should().NotBeNull();
+			peeked!.EndpointAddress.Should().Be(new Uri("https://configured.example/v2/track"));
+		}
+
+		[TestMethod]
+		public void Given_QueuedFileThatIsALinkToADevice_When_Peek_Then_ItIsQuarantinedWithoutBeingRead()
+		{
+			// Opening a file follows a link, and /dev/zero never ends: reading it to the end would exhaust memory
+			if (OperatingSystem.IsWindows())
+			{
+				TestRequirements.Skip("Unix devices only.", TestRequirements.LinuxUser, TestRequirements.LinuxRoot);
+				return;
+			}
+
+			// Arrange - a link planted before the folder was made private
+			var storageDir = GetTempStorageDirectory();
+			var storage = CreateStorage(storageDir);
+			File.CreateSymbolicLink(Path.Join(storageDir, QueuedFileName()), "/dev/zero");
+
+			// Act
+			var peeked = storage.Peek();
+
+			// Assert
+			peeked.Should().BeNull("a device is not a transmission");
+			Directory.GetFiles(storageDir, "*.trn").Should().BeEmpty();
+			Directory.GetFiles(storageDir, "*.corrupt").Should().ContainSingle("it is quarantined as corrupt");
+		}
+
+		[TestMethod]
+		public void Given_QueuedFileLongerThanTheStorageMayHold_When_Peek_Then_ItIsQuarantinedWithoutBeingRead()
+		{
+			// Arrange - no file this storage writes is longer than its whole capacity
+			var storageDir = GetTempStorageDirectory();
+			var storage = CreateStorage(storageDir);
+			var path = WriteQueuedFile(storageDir, "https://dc.services.visualstudio.com/v2/track");
+			storage.CapacityInBytes = (ulong)new FileInfo(path).Length - 1;
+
+			// Act
+			var peeked = storage.Peek();
+
+			// Assert
+			peeked.Should().BeNull();
+			File.Exists(path).Should().BeFalse();
+			Directory.GetFiles(storageDir, "*.corrupt").Should().ContainSingle("it is quarantined as corrupt");
+		}
+
 		private static PersistenceChannel.PersistenceChannel CreateChannel(string storageDir, string endpointAddress)
 			=> new PersistenceChannel.PersistenceChannel(storageDir)
 			{
@@ -166,7 +264,7 @@ namespace Uno.DevTools.Telemetry.Tests
 				SendingInterval = TimeSpan.FromMilliseconds(1),
 			};
 
-		private static StorageService CreateStorage(string storageDir)
+		private static StorageService CreateStorage(string? storageDir)
 		{
 			var storage = new StorageService();
 			storage.Init(storageDir);
@@ -181,6 +279,32 @@ namespace Uno.DevTools.Telemetry.Tests
 				"application/json",
 				"");
 		}
+
+		/// <summary>
+		///     Writes a queued file the way the storage does, naming <paramref name="address" /> as where it goes. It only gets
+		///     its queued name once complete, so that no sender reads it half written.
+		/// </summary>
+		private static string WriteQueuedFile(string storageDir, string address)
+		{
+			var name = Guid.NewGuid().ToString("N");
+			var tempPath = Path.Join(storageDir, name + ".tmp");
+			using (var stream = File.Create(tempPath))
+			{
+				StorageTransmission.SaveAsync(
+					new Transmission(new Uri(address), new byte[] { 1, 2, 3 }, "application/json", ""),
+					stream).GetAwaiter().GetResult();
+			}
+
+			var path = Path.Join(storageDir, QueuedFileName(name));
+			File.Move(tempPath, path);
+			return path;
+		}
+
+		/// <summary>
+		///     A name the storage gives a queued file.
+		/// </summary>
+		private static string QueuedFileName(string? name = null)
+			=> DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) + "_" + (name ?? Guid.NewGuid().ToString("N")) + ".trn";
 
 		/// <summary>
 		///     Until disposed, <paramref name="path" /> can't be opened for writing, as when it belongs to another user.
@@ -222,7 +346,7 @@ namespace Uno.DevTools.Telemetry.Tests
 			}
 
 			restore.Dispose();
-			Assert.Inconclusive("File permissions are not enforced for this user (root?).");
+			TestRequirements.Skip("File permissions are not enforced for this user (root?).", TestRequirements.LinuxUser);
 			return restore;
 		}
 

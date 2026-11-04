@@ -26,8 +26,6 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 {
 	internal sealed class StorageService : BaseStorageService
 	{
-		private const string DefaultStorageFolderName = "TelemetryStorageService";
-		
 		/// <summary>
 		///     TTL for .trn files: 30 days. After this period, files are deleted even if not sent.
 		/// </summary>
@@ -74,8 +72,13 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		internal override string? StorageDirectoryPath => _storageDirectoryPath;
 
 		/// <summary>
-		///     Gets the storage folder. If storage folder couldn't be created, null will be returned.
+		///     Gets the storage folder, or null when there is none.
 		/// </summary>
+		/// <remarks>
+		///     The folder is never created here: the caller creates it and makes it private (see <c>QueueDirectory</c>), and
+		///     one created here would be open to other users. If it is missing, as when it was deleted after it was
+		///     prepared, nothing is stored.
+		/// </remarks>
 		private string? StorageFolder
 		{
 			get
@@ -86,19 +89,10 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					{
 						if (!_storageFolderInitialized && _storageDirectoryPath is not null)
 						{
-							try
+							_storageDirectoryPathUsed = Directory.Exists(_storageDirectoryPath) ? _storageDirectoryPath : null;
+							if (_storageDirectoryPathUsed is null)
 							{
-								_storageDirectoryPathUsed = _storageDirectoryPath;
-
-								if (!Directory.Exists(_storageDirectoryPathUsed))
-								{
-									Directory.CreateDirectory(_storageDirectoryPathUsed);
-								}
-							}
-							catch (Exception e)
-							{
-								_storageDirectoryPathUsed = null;
-								PersistenceChannelDebugLog.WriteException(e, "Failed to create storage folder");
+								PersistenceChannelDebugLog.WriteLine("The storage folder does not exist; nothing is stored.");
 							}
 
 							_storageFolderInitialized = true;
@@ -114,7 +108,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		{
 			PeekedTransmissions = new SnapshottingDictionary<string, string>();
 
-			VerifyOrSetDefaultStorageDirectoryPath(storageDirectoryPath);
+			VerifyStorageDirectoryPath(storageDirectoryPath);
 
 			CapacityInBytes = 10 * 1024 * 1024; // 10 MB
 			MaxFiles = 100;
@@ -130,23 +124,23 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					TaskContinuationOptions.OnlyOnFaulted);
 		}
 
-		private void VerifyOrSetDefaultStorageDirectoryPath(string? desireStorageDirectoryPath)
+		/// <summary>
+		///     Sets the storage folder. Without one nothing is stored: a folder chosen here could be one that other users share.
+		/// </summary>
+		private void VerifyStorageDirectoryPath(string? desireStorageDirectoryPath)
 		{
 			if (string.IsNullOrEmpty(desireStorageDirectoryPath))
 			{
-				_storageDirectoryPath = Path.Combine(
-					Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-					DefaultStorageFolderName);
+				_storageDirectoryPath = null;
+				return;
 			}
-			else
-			{
-				if (!Path.IsPathRooted(desireStorageDirectoryPath))
-				{
-					throw new ArgumentException($"{nameof(desireStorageDirectoryPath)} need to be rooted (full path)");
-				}
 
-				_storageDirectoryPath = desireStorageDirectoryPath;
+			if (!Path.IsPathRooted(desireStorageDirectoryPath))
+			{
+				throw new ArgumentException($"{nameof(desireStorageDirectoryPath)} need to be rooted (full path)");
 			}
+
+			_storageDirectoryPath = desireStorageDirectoryPath;
 		}
 
 		/// <summary>
@@ -482,13 +476,26 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 					claim = _claims[file];
 				}
 
-				using (Stream stream = new MemoryStream())
+				// Opening a file follows a link, so a file planted before the folder was made private could lead to a pipe,
+				// which never ends, or a device such as /dev/zero, which never stops: read no further than the length the
+				// file has, and no file longer than the whole storage may be.
+				if (!claim.CanSeek || (ulong)claim.Length > CapacityInBytes)
 				{
-					await claim.CopyToAsync(stream).ConfigureAwait(false);
-					stream.Position = 0;
+					throw new InvalidDataException($"{file} is not a file this storage could have written (seekable: {claim.CanSeek}, length: {(claim.CanSeek ? claim.Length : -1)}).");
+				}
 
+				var content = new byte[claim.Length];
+				var read = 0;
+				int count;
+				while (read < content.Length && (count = await claim.ReadAsync(content, read, content.Length - read).ConfigureAwait(false)) > 0)
+				{
+					read += count;
+				}
+
+				using (Stream stream = new MemoryStream(content, 0, read, writable: false))
+				{
 					var storageTransmissionItem =
-						await StorageTransmission.CreateFromStreamAsync(stream, file).ConfigureAwait(false);
+						await StorageTransmission.CreateFromStreamAsync(stream, file, EndpointAddress).ConfigureAwait(false);
 					return storageTransmissionItem;
 				}
 			}

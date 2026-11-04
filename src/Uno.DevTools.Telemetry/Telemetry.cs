@@ -9,6 +9,7 @@
 
 using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.Extensibility;
+using Microsoft.ApplicationInsights.Extensibility.Implementation;
 using Microsoft.DotNet.PlatformAbstractions;
 using System.Diagnostics;
 using System.Reflection;
@@ -19,6 +20,18 @@ namespace Uno.DevTools.Telemetry
     public sealed class Telemetry : ITelemetry
     {
         private static readonly bool IsWasmBrowser = PlatformDetection.IsWasmBrowser;
+
+        // Stands in for the computer's name, which the SDK would otherwise put in every desktop item.
+        internal const string AnonymousRoleInstance = "anonymous";
+
+        // Set on every item an instance sends from memory because it has no queue folder of the user's own, to one of
+        // QueueRefusal's codes: those items would otherwise look like fewer users.
+        internal const string QueueRefusedProperty = "Queue Refused";
+
+        // Without a queue on disk, items wait in memory: sent this often, and on Flush and Dispose for at most as long
+        // as below, so that a process that stops soon after still sends them.
+        private static readonly TimeSpan MemorySendingInterval = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan MemoryFlushTimeout = TimeSpan.FromSeconds(2);
 
         private readonly string? _currentSessionId;
         private TelemetryClient? _client;
@@ -31,6 +44,7 @@ namespace Uno.DevTools.Telemetry
         private string? _storageDirectoryPath;
         private string? _settingsStorageDirectoryPath;
         private PersistenceChannel.PersistenceChannel? _persistenceChannel;
+        private Microsoft.ApplicationInsights.Channel.ITelemetryChannel? _memoryChannel;
         private WasmHttpSender? _wasmSender;
         private readonly string _instrumentationKey;
         private readonly string _eventNamePrefix;
@@ -39,6 +53,8 @@ namespace Uno.DevTools.Telemetry
         private readonly Func<string>? _currentDirectoryProvider;
         private readonly Microsoft.ApplicationInsights.Channel.ITelemetryChannel? _channelOverride;
         private readonly WasmHttpSender? _wasmSenderOverride;
+        private readonly UserFolders? _foldersOverride;
+        private readonly Func<Microsoft.ApplicationInsights.Channel.ITelemetryChannel>? _memoryChannelOverride;
         private readonly TaskCompletionSource<string?> _machineIdTcs = new TaskCompletionSource<string?>();
 
         public bool Enabled { get; }
@@ -69,7 +85,9 @@ namespace Uno.DevTools.Telemetry
 
         // Test seams: an injected channel replaces the persistence channel so the suite can observe the
         // items the desktop pipeline emits in-process, without disk or network I/O; an injected sender
-        // takes the WASM send path on any platform so the arguments forwarded to it can be asserted.
+        // takes the WASM send path on any platform so the arguments forwarded to it can be asserted;
+        // injected folders describe another machine to choose the queue and settings folders on; an injected
+        // memory channel stands in for the one used when no queue folder can be.
         internal Telemetry(
             string instrumentationKey,
             string eventNamePrefix,
@@ -80,7 +98,9 @@ namespace Uno.DevTools.Telemetry
             Func<string>? currentDirectoryProvider,
             string? productName,
             Microsoft.ApplicationInsights.Channel.ITelemetryChannel? channel,
-            WasmHttpSender? wasmSender)
+            WasmHttpSender? wasmSender,
+            UserFolders? folders = null,
+            Func<Microsoft.ApplicationInsights.Channel.ITelemetryChannel>? memoryChannel = null)
         {
             _instrumentationKey = instrumentationKey;
             _currentDirectoryProvider = currentDirectoryProvider;
@@ -89,17 +109,11 @@ namespace Uno.DevTools.Telemetry
             _productName = productName;
             _channelOverride = channel;
             _wasmSenderOverride = wasmSender;
+            _foldersOverride = folders;
+            _memoryChannelOverride = memoryChannel;
 
-            // An explicit true or false in the environment wins over the provider; unset or unparseable
-            // falls through to it.
-            if (TelemetryEnvironment.GetOptOut() is bool telemetryOptOut)
-            {
-                Enabled = !telemetryOptOut;
-            }
-            else
-            {
-                Enabled = !enabledProvider?.Invoke() ?? true;
-            }
+            // The environment can only opt out; otherwise the provider decides, and telemetry is on without one.
+            Enabled = !TelemetryEnvironment.IsOptedOut() && enabledProvider?.Invoke() != true;
 
             if (!Enabled)
             {
@@ -178,6 +192,8 @@ namespace Uno.DevTools.Telemetry
             {
                 task.Wait(TimeSpan.FromSeconds(1));
             }
+
+            FlushMemoryChannel();
         }
 
         public async Task FlushAsync(CancellationToken ct)
@@ -193,6 +209,16 @@ namespace Uno.DevTools.Telemetry
             {
                 await Task.WhenAny(task, Task.Delay(-1, ct));
             }
+
+            if (_memoryChannel is Microsoft.ApplicationInsights.Channel.InMemoryChannel inMemory)
+            {
+                // Its own flush waits for the network for as long as a send may take.
+                await Task.WhenAny(inMemory.FlushAsync(ct), Task.Delay(MemoryFlushTimeout, ct));
+            }
+            else
+            {
+                _memoryChannel?.Flush();
+            }
         }
 
         public Task<string?> GetMachineIdAsync(CancellationToken ct)
@@ -202,8 +228,33 @@ namespace Uno.DevTools.Telemetry
 
         public void Dispose()
         {
+            FlushMemoryChannel();
+            _memoryChannel?.Dispose();
             _persistenceChannel?.Dispose();
             _telemetryConfig?.Dispose();
+        }
+
+        /// <summary>
+        /// Sends what waits in memory, when there is no queue on disk, waiting at most <see cref="MemoryFlushTimeout"/>.
+        /// </summary>
+        private void FlushMemoryChannel()
+        {
+            try
+            {
+                if (_memoryChannel is Microsoft.ApplicationInsights.Channel.InMemoryChannel inMemory)
+                {
+                    inMemory.Flush(MemoryFlushTimeout);
+                }
+                else
+                {
+                    _memoryChannel?.Flush();
+                }
+            }
+            catch (Exception e)
+            {
+                // we don't want to fail the tool if telemetry fails.
+                Debug.Fail(e.ToString());
+            }
         }
 
         public void ThreadBlockingTrackEvent(string eventName, IDictionary<string, string> properties, IDictionary<string, double> measurements)
@@ -244,25 +295,42 @@ namespace Uno.DevTools.Telemetry
                     return;
                 }
 
-                // Non-WASM path: Existing implementation unchanged
-                // Older versions of this library send whatever is queued in ".uno/telemetry" without claiming it first,
-                // so the queue lives in a subfolder they never look into.
-                _storageDirectoryPath = Path.Combine(Path.GetTempPath(), ".uno", "telemetry", "outbox");
+                // Non-WASM path
+                var folders = _foldersOverride ?? UserFolders.Current();
 
-                // Store the settings on in the user profile for linux
-                if (Microsoft.DotNet.PlatformAbstractions.RuntimeEnvironment.OperatingSystemPlatform == Platform.Linux)
+                // An injected channel needs no queue folder, and none is created for it.
+                QueueRefusal? queueRefusal = null;
+                if (_channelOverride is null)
                 {
-                    _settingsStorageDirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".uno", "telemetry");
+                    _storageDirectoryPath = QueueDirectory.Choose(folders, out queueRefusal);
+                    if (queueRefusal is not null)
+                    {
+                        // No folder of the user's own to queue in (see QueueDirectory), so items are sent from memory,
+                        // and those not sent when the process stops are lost. No host listens to Trace, so the reason
+                        // also goes to the console when UNO_TELEMETRY_ENABLE_PERSISTENCE_CHANNEL_DEBUG_OUTPUT is set.
+                        var fromMemory = $"Telemetry can't queue on disk for this instance, so it sends from memory: {queueRefusal.Reason}.";
+                        TelemetryDiagnostics.Write(fromMemory);
+                        PersistenceChannel.PersistenceChannelDebugLog.WriteLine(fromMemory);
+                    }
                 }
-                else
-                {
-                    _settingsStorageDirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Uno Platform", "telemetry");
-                }
+
+                // Folders refused for the queue aren't trusted with the machine id either: run as root, they may be
+                // another user's. The id is then made for this run, unless the machine has a hardware address to hash.
+                _settingsStorageDirectoryPath = queueRefusal is null ? GetSettingsDirectoryPath(folders) : null;
 
                 Microsoft.ApplicationInsights.Channel.ITelemetryChannel channel;
                 if (_channelOverride is not null)
                 {
                     channel = _channelOverride;
+                }
+                else if (queueRefusal is not null)
+                {
+                    _memoryChannel = _memoryChannelOverride?.Invoke() ?? new Microsoft.ApplicationInsights.Channel.InMemoryChannel
+                    {
+                        EndpointAddress = PersistenceChannel.PersistenceChannel.TelemetryServiceEndpoint,
+                        SendingInterval = MemorySendingInterval,
+                    };
+                    channel = _memoryChannel;
                 }
                 else
                 {
@@ -273,12 +341,19 @@ namespace Uno.DevTools.Telemetry
                     channel = _persistenceChannel;
                 }
 
-                _commonProperties = new TelemetryCommonProperties(
+                var commonProperties = new TelemetryCommonProperties(
                     _settingsStorageDirectoryPath,
                     _versionAssembly,
                     _productName ?? _versionAssembly.GetName().Name ?? "Unknown",
                     _currentDirectoryProvider
                     ).GetTelemetryCommonProperties();
+                if (queueRefusal is not null)
+                {
+                    // The code only, never the reason, which names folders.
+                    commonProperties[QueueRefusedProperty] = queueRefusal.Code;
+                }
+
+                _commonProperties = commonProperties;
                 _commonMeasurements = new Dictionary<string, double>();
 
                 _telemetryConfig = new TelemetryConfiguration
@@ -292,6 +367,10 @@ namespace Uno.DevTools.Telemetry
                 _client.Context.User.Id = _commonProperties[TelemetryCommonProperties.MachineId];
                 _client.Context.Session.Id = _currentSessionId;
                 _client.Context.Device.OperatingSystem = Microsoft.DotNet.PlatformAbstractions.RuntimeEnvironment.OperatingSystem;
+                // The SDK fills an empty role instance with the machine's name (with its domain, if any), and
+                // an empty node name too once the role instance is set. Both are copied onto every item.
+                _client.Context.Cloud.RoleInstance = AnonymousRoleInstance;
+                _client.Context.GetInternalContext().NodeName = AnonymousRoleInstance;
 
                 _machineIdTcs.TrySetResult(_client.Context.User.Id);
             }
@@ -307,6 +386,31 @@ namespace Uno.DevTools.Telemetry
                 // exception (type and stack) goes out, since this is the only signal a Release consumer gets.
                 TelemetryDiagnostics.Write($"Telemetry initialization failed; telemetry is disabled for this instance: {e}");
             }
+        }
+
+        /// <summary>
+        /// Returns the folder the machine id is kept in, or <see langword="null"/> when there is no usable home to keep it
+        /// in: it is then not kept, rather than written under the current directory or at the root of the file system.
+        /// </summary>
+        /// <remarks>
+        /// Linux keeps it in the home folder, everything else in the application data folder (on macOS, under the home
+        /// folder too). Neither follows the queue folder, so that a machine keeps the id it already has.
+        /// </remarks>
+        internal static string? GetSettingsDirectoryPath(UserFolders folders)
+        {
+            if (!folders.IsWindows && !UserFolders.IsUsableBase(folders.HomeDirectory))
+            {
+                return null;
+            }
+
+            if (folders.IsLinux)
+            {
+                return UserFolders.Join(folders.HomeDirectory!, ".uno", "telemetry");
+            }
+
+            return UserFolders.IsUsableBase(folders.ApplicationData)
+                ? UserFolders.Join(folders.ApplicationData, "Uno Platform", "telemetry")
+                : null;
         }
 
         private void TrackEventTask(

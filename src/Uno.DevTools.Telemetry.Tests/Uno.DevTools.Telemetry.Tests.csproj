@@ -13,4 +13,16 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
+
+  <!--
+    One test starts the netstandard2.0 build of the library, the one MSBuild tasks and source generators load, whose code
+    differs where .NET 8 has APIs that netstandard2.0 lacks. It is built here, never packed from here, and copied next to
+    the tests.
+  -->
+  <Target Name="CopyNetStandardBuildOfTheLibrary" AfterTargets="Build">
+    <MSBuild Projects="..\Uno.DevTools.Telemetry\Uno.DevTools.Telemetry.csproj" Targets="Build" Properties="TargetFramework=netstandard2.0;GeneratePackageOnBuild=false">
+      <Output TaskParameter="TargetOutputs" ItemName="_NetStandardBuildOfTheLibrary" />
+    </MSBuild>
+    <Copy SourceFiles="@(_NetStandardBuildOfTheLibrary)" DestinationFolder="$(OutDir)netstandard2.0" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

@@ -30,8 +30,12 @@ namespace Uno.DevTools.Telemetry
     {
         private static readonly bool IsWasmBrowser = PlatformDetection.IsWasmBrowser;
 
+        /// <param name="storageDirectoryPath">
+        /// The folder the machine id is kept in, or <see langword="null"/> to keep none: the id then lasts for this run only,
+        /// unless it is derived from the machine's network address.
+        /// </param>
         public TelemetryCommonProperties(
-            string storageDirectoryPath,
+            string? storageDirectoryPath,
             Assembly versionAssembly,
             string productName,
             Func<string>? getCurrentDirectory = null,
@@ -46,7 +50,7 @@ namespace Uno.DevTools.Telemetry
 
         private readonly Func<string> _getCurrentDirectory;
         private readonly Func<IEnumerable<NetworkInterface>> _getNetworkInterfaces;
-        private readonly string _storageDirectoryPath;
+        private readonly string? _storageDirectoryPath;
         private readonly Assembly _versionAssembly;
         private readonly string _productName;
 
@@ -137,9 +141,9 @@ namespace Uno.DevTools.Telemetry
             }
 
             // Non-WASM path: Existing implementation with file I/O
-            var machineHashPath = Path.Combine(_storageDirectoryPath, ".machinehash");
+            var machineHashPath = _storageDirectoryPath is null ? null : UserFolders.Join(_storageDirectoryPath, ".machinehash");
 
-            if (File.Exists(machineHashPath))
+            if (machineHashPath is not null && File.Exists(machineHashPath))
             {
                 // An id hashed from an address many machines share was stored by an earlier version of
                 // this package; replace it so that this machine gets an id of its own.
@@ -158,6 +162,11 @@ namespace Uno.DevTools.Telemetry
                 var macAddr = MachineIdSource.GetUniqueAddress(_getNetworkInterfaces);
 
                 hash = HashBuilder.Build(macAddr ?? Guid.NewGuid().ToString());
+
+                if (machineHashPath is null)
+                {
+                    return hash;
+                }
 
                 if (!Directory.Exists(Path.GetDirectoryName(machineHashPath)))
                 {

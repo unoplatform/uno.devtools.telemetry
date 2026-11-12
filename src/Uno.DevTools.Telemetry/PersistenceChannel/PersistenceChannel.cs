@@ -35,6 +35,7 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 		///     Setting this value groups channels, even from different processes.
 		///     If 2 (or more) channels has the same <c>storageFolderName</c> only one channel will perform the sending even if the
 		///     channel is in a different process/AppDomain/Thread.
+		///     Without one, nothing is stored, and so nothing is sent.
 		/// </param>
 		/// <param name="sendersCount">
 		///     Defines the number of senders. A sender is a long-running thread that sends telemetry batches in intervals defined
@@ -87,8 +88,11 @@ namespace Uno.DevTools.Telemetry.PersistenceChannel
 
 			set
 			{
-				var address = value ?? TelemetryServiceEndpoint;
-				_flushManager.EndpointAddress = new Uri(address);
+				var address = new Uri(value ?? TelemetryServiceEndpoint);
+				_flushManager.EndpointAddress = address;
+
+				// Queued items are sent here too, whatever address their file names
+				_storage.EndpointAddress = address;
 			}
 		}
 

@@ -253,6 +253,48 @@ namespace Uno.DevTools.Telemetry.Tests
             (path is null ? null : path.Replace(Path.DirectorySeparatorChar, '/')).Should().Be(expected);
         }
 
+        [TestMethod]
+        public void Given_WindowsInAnAppContainer_When_ChoosingWhereTheMachineIdIsKept_Then_ItIsNotKept()
+        {
+            var folders = new UserFolders
+            {
+                IsWindows = true,
+                IsAppContainer = true,
+                ApplicationData = "/Users/someone/AppData/Roaming",
+            };
+
+            Telemetry.GetSettingsDirectoryPath(folders).Should().BeNull("a sandboxed host asks the user for each read outside its own folders");
+        }
+
+        [TestMethod]
+        public async Task Given_WindowsInAnAppContainer_When_TelemetryStarts_Then_TheSharedMachineIdFileIsNeitherReadNorWritten()
+        {
+            // Arrange
+            var applicationData = CreateDirectory();
+            var sharedFolder = Path.Join(applicationData, "Uno Platform", "telemetry");
+            Directory.CreateDirectory(sharedFolder);
+            var sharedId = Guid.NewGuid().ToString();
+            File.WriteAllText(Path.Join(sharedFolder, ".machinehash"), sharedId);
+            var channel = new CapturingTelemetryChannel();
+            var folders = new UserFolders
+            {
+                IsWindows = true,
+                IsAppContainer = true,
+                ApplicationData = applicationData,
+                TempPath = Path.GetTempPath(),
+            };
+
+            // Act
+            var telemetry = CreateTelemetry(folders, channel);
+            telemetry.TrackEvent("Evt", new Dictionary<string, string>(), null);
+            await telemetry.FlushAsync(CancellationToken.None);
+            var machineId = await telemetry.GetMachineIdAsync(CancellationToken.None);
+
+            // Assert
+            machineId.Should().NotBeNullOrEmpty().And.NotBe(sharedId, "the shared file is not read");
+            File.ReadAllText(Path.Join(sharedFolder, ".machinehash")).Should().Be(sharedId, "the shared file is not written");
+        }
+
         private static UserFolders Linux(string? homeDirectory)
             => new UserFolders
             {

@@ -18,7 +18,8 @@ namespace Uno.DevTools.Telemetry
         internal bool IsLinux { get; init; }
 
         /// <summary>
-        /// Whether this process runs in a Windows AppContainer, where each read outside the app's own folders asks the user.
+        /// Whether this process runs in a Windows AppContainer, where a read outside the app's own folders asks the user
+        /// or is refused, and <see cref="TempPath"/> is the container's own.
         /// </summary>
         internal bool IsAppContainer { get; init; }
 

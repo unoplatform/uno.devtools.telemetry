@@ -172,10 +172,12 @@ If attribution must be turned off without a code change:
   console. The machine id isn't stored in that case either, since the same folders can't be
   trusted: a machine with no hardware address to hash gets a new id each run.
 - In a Windows AppContainer (a sandboxed host, such as an app packaged with Win32 app isolation, and
-  every process it starts), the machine id isn't stored or read either. The application data folder
-  is outside the sandbox, so reading the id there makes Windows ask the user for the file. The id is
-  hashed from the hardware address on every start, so it stays the same across runs, and is the one
-  other Uno tools on the machine store unless their shared file holds a random id.
+  every process it starts), the machine id is kept in the container's own temp folder, under
+  `.uno/telemetry` beside the queue. The application data folder is outside the sandbox there:
+  reading the id from it makes Windows ask the user for the file, or refuses the read. The id is
+  made on the first start, hashed from the hardware address as elsewhere, and read back on later
+  starts. It isn't shared with Uno tools running outside the container, and is made again if the
+  temp folder is cleared.
 - Earlier versions of the package queue under `Path.GetTempPath()/.uno/telemetry/outbox` on every
   platform, and versions before those under `Path.GetTempPath()/.uno/telemetry`: on Linux, and on
   macOS when `TMPDIR` is unset, that is the shared `/tmp`, where while a user is signed in their

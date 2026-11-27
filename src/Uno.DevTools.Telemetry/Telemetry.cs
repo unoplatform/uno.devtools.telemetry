@@ -395,9 +395,18 @@ namespace Uno.DevTools.Telemetry
         /// <remarks>
         /// Linux keeps it in the home folder, everything else in the application data folder (on macOS, under the home
         /// folder too). Neither follows the queue folder, so that a machine keeps the id it already has.
+        /// In a Windows AppContainer the application data folder is outside the sandbox, so reading the id there asks
+        /// the user, or is refused. The id is kept in the container's own temp folder instead, beside the queue.
         /// </remarks>
         internal static string? GetSettingsDirectoryPath(UserFolders folders)
         {
+            if (folders.IsAppContainer)
+            {
+                return UserFolders.IsUsableBase(folders.TempPath)
+                    ? UserFolders.Join(folders.TempPath, ".uno", "telemetry")
+                    : null;
+            }
+
             if (!folders.IsWindows && !UserFolders.IsUsableBase(folders.HomeDirectory))
             {
                 return null;

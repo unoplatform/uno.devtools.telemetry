@@ -18,6 +18,11 @@ namespace Uno.DevTools.Telemetry
         internal bool IsLinux { get; init; }
 
         /// <summary>
+        /// Whether this process runs in a Windows AppContainer, where each read outside the app's own folders asks the user.
+        /// </summary>
+        internal bool IsAppContainer { get; init; }
+
+        /// <summary>
         /// The value of <c>TMPDIR</c>, if any.
         /// </summary>
         internal string? TmpDir { get; init; }
@@ -50,6 +55,7 @@ namespace Uno.DevTools.Telemetry
             IsWindows = PlatformDetection.IsWindows,
             IsMacOS = PlatformDetection.IsMacOS,
             IsLinux = PlatformDetection.IsLinux,
+            IsAppContainer = AppContainer.IsCurrentProcess(),
             TmpDir = Environment.GetEnvironmentVariable("TMPDIR"),
             XdgCacheHome = Environment.GetEnvironmentVariable("XDG_CACHE_HOME"),
             HomeDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),

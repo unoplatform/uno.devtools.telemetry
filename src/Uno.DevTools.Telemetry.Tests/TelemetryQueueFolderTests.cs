@@ -307,13 +307,18 @@ namespace Uno.DevTools.Telemetry.Tests
 
             // Act
             var firstId = await StartAndGetMachineIdAsync(folders);
-            var keptId = File.ReadAllText(Path.Join(containerTemp, ".uno", "telemetry", ".machinehash"));
+            var keptFile = Path.Join(containerTemp, ".uno", "telemetry", ".machinehash");
+            var keptId = File.ReadAllText(keptFile);
+
+            // Another id than the one this machine hashes to, so the second start can only get it from the file.
+            var idOnlyTheFileHolds = Guid.NewGuid().ToString();
+            File.WriteAllText(keptFile, idOnlyTheFileHolds);
             var secondId = await StartAndGetMachineIdAsync(folders);
 
             // Assert
             firstId.Should().NotBeNullOrEmpty().And.NotBe(sharedId, "the shared file is not read");
             keptId.Should().Be(firstId, "the id is kept in the container's own temp folder");
-            secondId.Should().Be(firstId, "a second start reads the kept id, whatever the network interfaces are by then");
+            secondId.Should().Be(idOnlyTheFileHolds, "a second start reads the kept id, whatever the network interfaces are by then");
             File.ReadAllText(sharedFile).Should().Be(sharedId);
             File.GetLastWriteTimeUtc(sharedFile).Should().Be(sharedFileWrittenAt, "the shared file is not written");
         }

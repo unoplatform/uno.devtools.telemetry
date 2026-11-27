@@ -254,45 +254,83 @@ namespace Uno.DevTools.Telemetry.Tests
         }
 
         [TestMethod]
-        public void Given_WindowsInAnAppContainer_When_ChoosingWhereTheMachineIdIsKept_Then_ItIsNotKept()
+        public void Given_WindowsInAnAppContainer_When_ChoosingWhereTheMachineIdIsKept_Then_ItIsTheContainersOwnTempFolder()
         {
             var folders = new UserFolders
             {
                 IsWindows = true,
                 IsAppContainer = true,
                 ApplicationData = "/Users/someone/AppData/Roaming",
+                TempPath = "/Users/someone/AppData/Local/Packages/app/AC/Temp",
             };
 
-            Telemetry.GetSettingsDirectoryPath(folders).Should().BeNull("a sandboxed host asks the user for each read outside its own folders");
+            var path = Telemetry.GetSettingsDirectoryPath(folders);
+
+            path!.Replace(Path.DirectorySeparatorChar, '/').Should().Be(
+                "/Users/someone/AppData/Local/Packages/app/AC/Temp/.uno/telemetry",
+                "the application data folder is outside the sandbox, and reading it asks the user");
         }
 
         [TestMethod]
-        public async Task Given_WindowsInAnAppContainer_When_TelemetryStarts_Then_TheSharedMachineIdFileIsNeitherReadNorWritten()
+        public void Given_WindowsInAnAppContainerWithNoUsableTempFolder_When_ChoosingWhereTheMachineIdIsKept_Then_ItIsNotKept()
+        {
+            var folders = new UserFolders
+            {
+                IsWindows = true,
+                IsAppContainer = true,
+                ApplicationData = "/Users/someone/AppData/Roaming",
+                TempPath = "",
+            };
+
+            Telemetry.GetSettingsDirectoryPath(folders).Should().BeNull();
+        }
+
+        [TestMethod]
+        public async Task Given_WindowsInAnAppContainer_When_TelemetryStartsTwice_Then_TheIdIsKeptInTheContainerAndTheSharedFileIsLeftAlone()
         {
             // Arrange
             var applicationData = CreateDirectory();
             var sharedFolder = Path.Join(applicationData, "Uno Platform", "telemetry");
             Directory.CreateDirectory(sharedFolder);
+            var sharedFile = Path.Join(sharedFolder, ".machinehash");
             var sharedId = Guid.NewGuid().ToString();
-            File.WriteAllText(Path.Join(sharedFolder, ".machinehash"), sharedId);
-            var channel = new CapturingTelemetryChannel();
+            File.WriteAllText(sharedFile, sharedId);
+            var sharedFileWrittenAt = File.GetLastWriteTimeUtc(sharedFile);
+            var containerTemp = CreateDirectory();
             var folders = new UserFolders
             {
                 IsWindows = true,
                 IsAppContainer = true,
                 ApplicationData = applicationData,
-                TempPath = Path.GetTempPath(),
+                TempPath = containerTemp,
             };
 
             // Act
-            var telemetry = CreateTelemetry(folders, channel);
-            telemetry.TrackEvent("Evt", new Dictionary<string, string>(), null);
-            await telemetry.FlushAsync(CancellationToken.None);
-            var machineId = await telemetry.GetMachineIdAsync(CancellationToken.None);
+            var firstId = await StartAndGetMachineIdAsync(folders);
+            var keptId = File.ReadAllText(Path.Join(containerTemp, ".uno", "telemetry", ".machinehash"));
+            var secondId = await StartAndGetMachineIdAsync(folders);
 
             // Assert
-            machineId.Should().NotBeNullOrEmpty().And.NotBe(sharedId, "the shared file is not read");
-            File.ReadAllText(Path.Join(sharedFolder, ".machinehash")).Should().Be(sharedId, "the shared file is not written");
+            firstId.Should().NotBeNullOrEmpty().And.NotBe(sharedId, "the shared file is not read");
+            keptId.Should().Be(firstId, "the id is kept in the container's own temp folder");
+            secondId.Should().Be(firstId, "a second start reads the kept id, whatever the network interfaces are by then");
+            File.ReadAllText(sharedFile).Should().Be(sharedId);
+            File.GetLastWriteTimeUtc(sharedFile).Should().Be(sharedFileWrittenAt, "the shared file is not written");
+        }
+
+        [TestMethod]
+        public void Given_AnyPlatform_When_AskingWhetherThisIsAnAppContainer_Then_TheTestRunIsNotInOne()
+        {
+            // Off Windows this answers without asking; on Windows it runs the token query.
+            AppContainer.IsCurrentProcess().Should().BeFalse();
+        }
+
+        private async Task<string?> StartAndGetMachineIdAsync(UserFolders folders)
+        {
+            var telemetry = CreateTelemetry(folders, new CapturingTelemetryChannel());
+            telemetry.TrackEvent("Evt", new Dictionary<string, string>(), null);
+            await telemetry.FlushAsync(CancellationToken.None);
+            return await telemetry.GetMachineIdAsync(CancellationToken.None);
         }
 
         private static UserFolders Linux(string? homeDirectory)
